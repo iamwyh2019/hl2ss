@@ -32,9 +32,11 @@
 #include <winrt/Windows.Foundation.Collections.h>
 #include <winrt/Windows.UI.Core.h>
 #include <winrt/Windows.ApplicationModel.Core.h>
+#include <winrt/Windows.Media.Capture.Frames.h>
 
 using namespace winrt::Windows::UI::Core;
 using namespace winrt::Windows::ApplicationModel::Core;
+using namespace winrt::Windows::Media::Capture::Frames;
 
 //-----------------------------------------------------------------------------
 // Functions
@@ -110,4 +112,21 @@ int OverrideWorldCoordinateSystem(void* scs_ptr)
     }
     Locator_OverrideWorldCoordinateSystem(scs);
     return true;
+}
+
+extern "C" {
+    typedef void(*FrameCallback)(const MediaFrameReference*);
+    typedef void(*FrameSentCallback)(const IMFSample*);
+}
+
+HL2SS_PLUGIN_EXPORT
+void AddCustomFrameCallback(FrameCallback callback)
+{
+    PV_SetCustomFrameCallback(callback);
+}
+
+HL2SS_PLUGIN_EXPORT
+void AddCustomFrameSentCallback(FrameSentCallback callback)
+{
+    PV_SetCustomFrameSentCallback(callback);
 }

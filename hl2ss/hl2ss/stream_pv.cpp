@@ -4,6 +4,7 @@
 #include "custom_media_buffers.h"
 #include "personal_video.h"
 #include "locator.h"
+#include "stream_pv.h"
 #include "log.h"
 #include "ports.h"
 #include "timestamps.h"
@@ -84,9 +85,23 @@ static PV_Projection g_pvp_sh;
 static HANDLE g_event_intrinsic = NULL; // alias
 static PV_Mode2 g_calibration;
 
+// Custom callback
+FrameCallback g_frameCallBack = nullptr;
+FrameSentCallback g_frameSentCallBack = nullptr;
+
 //-----------------------------------------------------------------------------
 // Functions
 //-----------------------------------------------------------------------------
+
+void PV_SetCustomFrameCallback(FrameCallback callback)
+{
+    g_frameCallBack = callback;
+}
+
+void PV_SetCustomFrameSentCallback(FrameSentCallback callback)
+{
+    g_frameSentCallBack = callback;
+}
 
 // OK
 template<bool ENABLE_LOCATION>
@@ -100,52 +115,56 @@ void PV_OnVideoFrameArrived(MediaFrameReader const& sender, MediaFrameArrivedEve
 
     if (TryAcquireSRWLockShared(&g_lock) != 0)
     {
-    auto const& frame = sender.TryAcquireLatestFrame();
-    if (frame) 
-    {
-    if (g_counter == 0)
-    {
-    SoftwareBitmapBuffer::CreateInstance(&pBuffer, frame);
+        auto const& frame = sender.TryAcquireLatestFrame();
+        if (frame) 
+        {
+            if (g_counter == 0)
+            {
+                if (g_frameCallBack != nullptr) {
+                    g_frameCallBack(&frame);
+                }
 
-    MFCreateSample(&pSample);
+                SoftwareBitmapBuffer::CreateInstance(&pBuffer, frame);
 
-    int64_t timestamp = frame.SystemRelativeTime().Value().count();
+                MFCreateSample(&pSample);
 
-    pSample->AddBuffer(pBuffer);
-    pSample->SetSampleDuration(frame.Duration().count());
-    pSample->SetSampleTime(timestamp);
+                int64_t timestamp = frame.SystemRelativeTime().Value().count();
 
-    auto const& intrinsics = frame.VideoMediaFrame().CameraIntrinsics();
-    auto const& metadata   = frame.Properties().Lookup(MFSampleExtension_CaptureMetadata).as<IMapView<winrt::guid, winrt::Windows::Foundation::IInspectable>>();
+                pSample->AddBuffer(pBuffer);
+                pSample->SetSampleDuration(frame.Duration().count());
+                pSample->SetSampleTime(timestamp);
 
-    pj.timestamp = timestamp;
+                auto const& intrinsics = frame.VideoMediaFrame().CameraIntrinsics();
+                auto const& metadata   = frame.Properties().Lookup(MFSampleExtension_CaptureMetadata).as<IMapView<winrt::guid, winrt::Windows::Foundation::IInspectable>>();
 
-    pj.f = intrinsics.FocalLength();
-    pj.c = intrinsics.PrincipalPoint();
+                pj.timestamp = timestamp;
 
-    pj.exposure_time         = metadata.Lookup(MF_CAPTURE_METADATA_EXPOSURE_TIME).as<uint64_t>();
-    pj.exposure_compensation = *(uint64x2*)metadata.Lookup(MF_CAPTURE_METADATA_EXPOSURE_COMPENSATION).as<winrt::Windows::Foundation::IReferenceArray<uint8_t>>().Value().begin();
-    pj.iso_speed             = metadata.Lookup(MF_CAPTURE_METADATA_ISO_SPEED).as<uint32_t>();
-    pj.iso_gains             = *(float2*)metadata.Lookup(MF_CAPTURE_METADATA_ISO_GAINS).as<winrt::Windows::Foundation::IReferenceArray<uint8_t>>().Value().begin();
-    pj.lens_position         = metadata.Lookup(MF_CAPTURE_METADATA_LENS_POSITION).as<uint32_t>();
-    pj.focus_state           = metadata.Lookup(MF_CAPTURE_METADATA_FOCUSSTATE).as<uint32_t>();
-    pj.white_balance         = metadata.Lookup(MF_CAPTURE_METADATA_WHITEBALANCE).as<uint32_t>();
-    pj.white_balance_gains   = *(float3*)metadata.Lookup(MF_CAPTURE_METADATA_WHITEBALANCE_GAINS).as<winrt::Windows::Foundation::IReferenceArray<uint8_t>>().Value().begin();
+                pj.f = intrinsics.FocalLength();
+                pj.c = intrinsics.PrincipalPoint();
 
-    if constexpr (ENABLE_LOCATION)
-    {
-    pj.pose = Locator_GetTransformTo(frame.CoordinateSystem(), Locator_GetWorldCoordinateSystem(QPCTimestampToPerceptionTimestamp(timestamp)));
-    }
+                pj.exposure_time         = metadata.Lookup(MF_CAPTURE_METADATA_EXPOSURE_TIME).as<uint64_t>();
+                pj.exposure_compensation = *(uint64x2*)metadata.Lookup(MF_CAPTURE_METADATA_EXPOSURE_COMPENSATION).as<winrt::Windows::Foundation::IReferenceArray<uint8_t>>().Value().begin();
+                pj.iso_speed             = metadata.Lookup(MF_CAPTURE_METADATA_ISO_SPEED).as<uint32_t>();
+                pj.iso_gains             = *(float2*)metadata.Lookup(MF_CAPTURE_METADATA_ISO_GAINS).as<winrt::Windows::Foundation::IReferenceArray<uint8_t>>().Value().begin();
+                pj.lens_position         = metadata.Lookup(MF_CAPTURE_METADATA_LENS_POSITION).as<uint32_t>();
+                pj.focus_state           = metadata.Lookup(MF_CAPTURE_METADATA_FOCUSSTATE).as<uint32_t>();
+                pj.white_balance         = metadata.Lookup(MF_CAPTURE_METADATA_WHITEBALANCE).as<uint32_t>();
+                pj.white_balance_gains   = *(float3*)metadata.Lookup(MF_CAPTURE_METADATA_WHITEBALANCE_GAINS).as<winrt::Windows::Foundation::IReferenceArray<uint8_t>>().Value().begin();
 
-    pSample->SetBlob(MF_USER_DATA_PAYLOAD, (UINT8*)&pj, sizeof(pj));
+                if constexpr (ENABLE_LOCATION)
+                {
+                pj.pose = Locator_GetTransformTo(frame.CoordinateSystem(), Locator_GetWorldCoordinateSystem(QPCTimestampToPerceptionTimestamp(timestamp)));
+                }
 
-    g_pSinkWriter->WriteSample(g_dwVideoIndex, pSample);
+                pSample->SetBlob(MF_USER_DATA_PAYLOAD, (UINT8*)&pj, sizeof(pj));
 
-    pSample->Release();
-    pBuffer->Release();
-    }
-    g_counter = (g_counter + 1) % g_divisor;
-    }
+                g_pSinkWriter->WriteSample(g_dwVideoIndex, pSample);
+
+                pSample->Release();
+                pBuffer->Release();
+            }
+            g_counter = (g_counter + 1) % g_divisor;
+        }
     ReleaseSRWLockShared(&g_lock);
     }
 }
@@ -157,30 +176,30 @@ static void PV_OnVideoFrameArrived_Intrinsics(MediaFrameReader const& sender, Me
 
     if (TryAcquireSRWLockExclusive(&g_lock) != 0)
     {
-    if (WaitForSingleObject(g_event_intrinsic, 0) == WAIT_TIMEOUT)
-    {
-    auto const& frame = sender.TryAcquireLatestFrame();
-    if (frame) 
-    {    
-    auto const& intrinsics = frame.VideoMediaFrame().CameraIntrinsics();
-    auto const& extrinsics = frame.Properties().Lookup(MFSampleExtension_CameraExtrinsics).as<winrt::Windows::Foundation::IReferenceArray<uint8_t>>().Value();
-    auto const& additional = frame.Format().Properties().Lookup(winrt::guid("86b6adbb-3735-447d-bee5-6fc23cb58d4a")).as<winrt::Windows::Foundation::IReferenceArray<uint8_t>>().Value();
+        if (WaitForSingleObject(g_event_intrinsic, 0) == WAIT_TIMEOUT)
+        {
+            auto const& frame = sender.TryAcquireLatestFrame();
+            if (frame) 
+            {    
+                auto const& intrinsics = frame.VideoMediaFrame().CameraIntrinsics();
+                auto const& extrinsics = frame.Properties().Lookup(MFSampleExtension_CameraExtrinsics).as<winrt::Windows::Foundation::IReferenceArray<uint8_t>>().Value();
+                auto const& additional = frame.Format().Properties().Lookup(winrt::guid("86b6adbb-3735-447d-bee5-6fc23cb58d4a")).as<winrt::Windows::Foundation::IReferenceArray<uint8_t>>().Value();
 
-    g_calibration.f = intrinsics.FocalLength();
-    g_calibration.c = intrinsics.PrincipalPoint();
-    g_calibration.r = intrinsics.RadialDistortion();
-    g_calibration.t = intrinsics.TangentialDistortion();
-    g_calibration.p = intrinsics.UndistortedProjectionTransform();
+                g_calibration.f = intrinsics.FocalLength();
+                g_calibration.c = intrinsics.PrincipalPoint();
+                g_calibration.r = intrinsics.RadialDistortion();
+                g_calibration.t = intrinsics.TangentialDistortion();
+                g_calibration.p = intrinsics.UndistortedProjectionTransform();
 
-    g_calibration.extrinsics = Locator_Locate(QPCTimestampToPerceptionTimestamp(frame.SystemRelativeTime().Value().count()), ResearchMode_GetLocator(), frame.CoordinateSystem());
+                g_calibration.extrinsics = Locator_Locate(QPCTimestampToPerceptionTimestamp(frame.SystemRelativeTime().Value().count()), ResearchMode_GetLocator(), frame.CoordinateSystem());
 
-    g_calibration.intrinsics_mf = *(float4*)&((float*)additional.begin())[3];
-    g_calibration.extrinsics_mf = *(float7*)&((float*)extrinsics.begin())[5];
+                g_calibration.intrinsics_mf = *(float4*)&((float*)additional.begin())[3];
+                g_calibration.extrinsics_mf = *(float7*)&((float*)extrinsics.begin())[5];
 
-    SetEvent(g_event_intrinsic);
-    }
-    }
-    ReleaseSRWLockExclusive(&g_lock);
+                SetEvent(g_event_intrinsic);
+            }
+        }
+        ReleaseSRWLockExclusive(&g_lock);
     }
 }
 
@@ -193,6 +212,10 @@ void PV_SendSample(IMFSample* pSample, void* param)
     BYTE* pBytes;
     DWORD cbData;
     WSABUF wsaBuf[ENABLE_LOCATION ? 5 : 4];
+
+    if (g_frameSentCallBack != nullptr) {
+        g_frameSentCallBack(pSample);
+    }
 
     HookCallbackSocket* user = (HookCallbackSocket*)param;
     H26xFormat* format = (H26xFormat*)user->format;
@@ -215,7 +238,7 @@ void PV_SendSample(IMFSample* pSample, void* param)
 
     if constexpr(ENABLE_LOCATION)
     {
-    pack_buffer(wsaBuf, 4, &g_pvp_sh.pose, sizeof(g_pvp_sh.pose));
+        pack_buffer(wsaBuf, 4, &g_pvp_sh.pose, sizeof(g_pvp_sh.pose));
     }
     
     bool ok = send_multiple(user->clientsocket, wsaBuf, sizeof(wsaBuf) / sizeof(WSABUF));
@@ -306,10 +329,10 @@ static void PV_Stream(SOCKET clientsocket)
 
     if (mode & 4)
     {
-    ok = ReceiveMRCVideoOptions(clientsocket, options);
-    if (!ok) { return; }
-    if (PersonalVideo_Status()) { PersonalVideo_Close(); }
-    PersonalVideo_Open(options);
+        ok = ReceiveMRCVideoOptions(clientsocket, options);
+        if (!ok) { return; }
+        if (PersonalVideo_Status()) { PersonalVideo_Close(); }
+        PersonalVideo_Open(options);
     }
 
     if (!PersonalVideo_Status()) { return; }
@@ -325,9 +348,9 @@ static void PV_Stream(SOCKET clientsocket)
     
     switch (mode & 3)
     {
-    case 0: PV_Stream<false>(clientsocket, clientevent, videoFrameReader, format); break;
-    case 1: PV_Stream<true>( clientsocket, clientevent, videoFrameReader, format); break;
-    case 2: PV_Intrinsics(   clientsocket, clientevent, videoFrameReader);         break;
+        case 0: PV_Stream<false>(clientsocket, clientevent, videoFrameReader, format); break;
+        case 1: PV_Stream<true>( clientsocket, clientevent, videoFrameReader, format); break;
+        case 2: PV_Intrinsics(   clientsocket, clientevent, videoFrameReader);         break;
     }
 
     videoFrameReader.Close();
@@ -357,22 +380,22 @@ static DWORD WINAPI PV_EntryPoint(void *param)
 
     do
     {
-    ShowMessage("PV: Waiting for client");
+        ShowMessage("PV: Waiting for client");
 
-    clientsocket = accept(listensocket, NULL, NULL); // block
-    if (clientsocket == INVALID_SOCKET) { break; }
+        clientsocket = accept(listensocket, NULL, NULL); // block
+        if (clientsocket == INVALID_SOCKET) { break; }
 
-    ShowMessage("PV: Client connected");
+        ShowMessage("PV: Client connected");
 
-    SetThreadPriority(GetCurrentThread(), ExtendedExecution_GetInterfacePriority(PORT_NUMBER_PV - PORT_NUMBER_BASE));
+        SetThreadPriority(GetCurrentThread(), ExtendedExecution_GetInterfacePriority(PORT_NUMBER_PV - PORT_NUMBER_BASE));
 
-    PV_Stream(clientsocket);
+        PV_Stream(clientsocket);
 
-    SetThreadPriority(GetCurrentThread(), base_priority);
+        SetThreadPriority(GetCurrentThread(), base_priority);
 
-    closesocket(clientsocket);
+        closesocket(clientsocket);
 
-    ShowMessage("PV: Client disconnected");
+        ShowMessage("PV: Client disconnected");
     } 
     while (WaitForSingleObject(g_event_quit, 0) == WAIT_TIMEOUT);
 

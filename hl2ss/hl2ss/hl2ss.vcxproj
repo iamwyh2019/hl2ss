@@ -89,7 +89,8 @@
     <AppxBundle>Always</AppxBundle>
     <AppxBundlePlatforms>arm64</AppxBundlePlatforms>
     <HoursBetweenUpdateChecks>0</HoursBetweenUpdateChecks>
-    <PackageCertificateThumbprint>D98E441A0E47A44188C1A8D182A165044B5EFA8A</PackageCertificateThumbprint>
+    <PackageCertificateThumbprint>9D107684CF17D87111A73669540ADCAD5123286D</PackageCertificateThumbprint>
+    <PackageCertificateKeyFile>hl2ss_TemporaryKey.pfx</PackageCertificateKeyFile>
   </PropertyGroup>
   <ItemDefinitionGroup>
     <ClCompile>

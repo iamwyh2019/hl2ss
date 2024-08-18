@@ -73,10 +73,10 @@ static bool PersonalVideo_FindVideoSource(MediaCapture const& mediaCapture, Medi
 {
     for (auto const& frameSource : mediaCapture.FrameSources())
     {
-    auto const& frameSourceInfo = frameSource.Value().Info();
-    if ((frameSourceInfo.MediaStreamType() != MediaStreamType::VideoRecord) || (frameSourceInfo.SourceKind() != MediaFrameSourceKind::Color)) { continue; }
-    videoSource = frameSource.Value();
-    return true;
+        auto const& frameSourceInfo = frameSource.Value().Info();
+        if ((frameSourceInfo.MediaStreamType() != MediaStreamType::VideoRecord) || (frameSourceInfo.SourceKind() != MediaFrameSourceKind::Color)) { continue; }
+        videoSource = frameSource.Value();
+        return true;
     }
 
     return false;
@@ -87,11 +87,11 @@ static bool PersonalVideo_FindVideoFormat(MediaFrameSource const& videoSource, u
 {
     for (auto const& format : videoSource.SupportedFormats())
     {
-    if (format.VideoFormat().Width()   != width)     { continue; }
-    if (format.VideoFormat().Height()  != height)    { continue; }    
-    if (format.FrameRate().Numerator() != frameRate) { continue; } // assuming all denominators are 1
-    selectedFormat = format;
-    return true;
+        if (format.VideoFormat().Width()   != width)     { continue; }
+        if (format.VideoFormat().Height()  != height)    { continue; }    
+        if (format.FrameRate().Numerator() != frameRate) { continue; } // assuming all denominators are 1
+        selectedFormat = format;
+        return true;
     }
 
     return false;
