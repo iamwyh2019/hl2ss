@@ -213,10 +213,6 @@ void PV_SendSample(IMFSample* pSample, void* param)
     DWORD cbData;
     WSABUF wsaBuf[ENABLE_LOCATION ? 5 : 4];
 
-    if (g_frameSentCallBack != nullptr) {
-        g_frameSentCallBack(pSample);
-    }
-
     HookCallbackSocket* user = (HookCallbackSocket*)param;
     H26xFormat* format = (H26xFormat*)user->format;
     bool sh = format->profile != H26xProfile::H26xProfile_None;
@@ -241,7 +237,7 @@ void PV_SendSample(IMFSample* pSample, void* param)
         pack_buffer(wsaBuf, 4, &g_pvp_sh.pose, sizeof(g_pvp_sh.pose));
     }
     
-    bool ok = send_multiple(user->clientsocket, wsaBuf, sizeof(wsaBuf) / sizeof(WSABUF));
+    bool ok = send_multiple(user->clientsocket, wsaBuf, sizeof(wsaBuf) / sizeof(WSABUF), g_frameSentCallBack);
     if (!ok) { SetEvent(user->clientevent); }
 
     pBuffer->Unlock();
@@ -344,7 +340,8 @@ static void PV_Stream(SOCKET clientsocket)
 
     PersonalVideo_RegisterEvent(clientevent);
     auto const& videoFrameReader = PersonalVideo_CreateFrameReader();
-    videoFrameReader.AcquisitionMode(MediaFrameReaderAcquisitionMode::Buffered);
+    // videoFrameReader.AcquisitionMode(MediaFrameReaderAcquisitionMode::Buffered);
+    videoFrameReader.AcquisitionMode(MediaFrameReaderAcquisitionMode::Realtime);
     
     switch (mode & 3)
     {

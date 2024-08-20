@@ -105,12 +105,15 @@ bool recv(SOCKET clientsocket, char* buf, int bytes)
 }
 
 // OK
-bool send_multiple(SOCKET s, LPWSABUF buffers, DWORD dwBufferCount)
+bool send_multiple(SOCKET s, LPWSABUF buffers, DWORD dwBufferCount, FrameSentCallback callback)
 {
 	DWORD dwBytesSent;
 	int status;
 
 	status = WSASend(s, buffers, dwBufferCount, &dwBytesSent, 0, NULL, NULL);
+	if (status != SOCKET_ERROR && callback != nullptr) {
+		callback(dwBytesSent);
+	}
 	return status != SOCKET_ERROR;
 }
 

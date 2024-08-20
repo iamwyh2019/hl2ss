@@ -116,17 +116,19 @@ int OverrideWorldCoordinateSystem(void* scs_ptr)
 
 extern "C" {
     typedef void(*FrameCallback)(const MediaFrameReference*);
-    typedef void(*FrameSentCallback)(const IMFSample*);
+    typedef void(*FrameSentCallback)(const DWORD);
 }
 
 HL2SS_PLUGIN_EXPORT
-void AddCustomFrameCallback(FrameCallback callback)
+int AddCustomFrameCallback(FrameCallback callback)
 {
     PV_SetCustomFrameCallback(callback);
+    return 0;
 }
 
 HL2SS_PLUGIN_EXPORT
-void AddCustomFrameSentCallback(FrameSentCallback callback)
+int AddCustomFrameSentCallback(FrameSentCallback callback)
 {
     PV_SetCustomFrameSentCallback(callback);
+    return 0;
 }

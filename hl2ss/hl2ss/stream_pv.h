@@ -2,10 +2,10 @@
 #pragma once
 
 #include <winrt/Windows.Media.Capture.Frames.h>
+#include "server.h"
 using namespace winrt::Windows::Media::Capture::Frames;
 
 typedef void(*FrameCallback)(const MediaFrameReference*);
-typedef void(*FrameSentCallback)(const IMFSample*);
 
 void PV_Initialize();
 void PV_Quit();
