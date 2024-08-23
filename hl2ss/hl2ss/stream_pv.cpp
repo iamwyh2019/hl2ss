@@ -20,12 +20,15 @@
 #include <winrt/Windows.Foundation.Numerics.h>
 #include <winrt/Windows.Perception.Spatial.h>
 
+#include <chrono>
+
 using namespace winrt::Windows::Media::Capture;
 using namespace winrt::Windows::Media::Capture::Frames;
 using namespace winrt::Windows::Media::Devices::Core;
 using namespace winrt::Windows::Foundation::Numerics;
 using namespace winrt::Windows::Foundation::Collections;
 using namespace winrt::Windows::Perception::Spatial;
+using namespace std::chrono;
 
 struct uint64x2
 {
@@ -89,6 +92,23 @@ static PV_Mode2 g_calibration;
 FrameCallback g_frameCallBack = nullptr;
 FrameSentCallback g_frameSentCallBack = nullptr;
 
+// Function to get system boot time
+int64_t GetSystemBootTime()
+{
+	auto current_time = system_clock::now();
+	auto uptime_ms = GetTickCount64();
+	auto boot_time_ms = duration_cast<milliseconds>(current_time.time_since_epoch()).count() - uptime_ms;
+	return static_cast<int64_t>(boot_time_ms);
+}
+int64_t g_system_boot_time = GetSystemBootTime(); // in milliseconds
+
+int64_t GetFrameUTCTimestamp(int64_t timestamp)
+{
+	int64_t relative_time_ms = timestamp / 10000; // convert to milliseconds
+	return g_system_boot_time + relative_time_ms;
+}
+
+
 //-----------------------------------------------------------------------------
 // Functions
 //-----------------------------------------------------------------------------
@@ -138,6 +158,9 @@ void PV_OnVideoFrameArrived(MediaFrameReader const& sender, MediaFrameArrivedEve
                 auto const& metadata   = frame.Properties().Lookup(MFSampleExtension_CaptureMetadata).as<IMapView<winrt::guid, winrt::Windows::Foundation::IInspectable>>();
 
                 pj.timestamp = timestamp;
+				// timestamp is the relative time from the system boot time in 100-nanosecond intervals
+				// convert to Unix time in milliseconds
+				// pj.timestamp = GetFrameUTCTimestamp(timestamp);
 
                 pj.f = intrinsics.FocalLength();
                 pj.c = intrinsics.PrincipalPoint();
@@ -248,21 +271,33 @@ void PV_SendSample(IMFSample* pSample, void* param)
 
 // OK
 template<bool ENABLE_LOCATION>
-void PV_Stream(SOCKET clientsocket, HANDLE clientevent, MediaFrameReader const& reader, H26xFormat& format)
+int PV_Stream(SOCKET clientsocket, HANDLE clientevent, MediaFrameReader const& reader, H26xFormat& format)
 {
     CustomMediaSink* pSink; // Release
     std::vector<uint64_t> options;
     HookCallbackSocket user;
+    uint16_t stream_port;
     bool ok;
 
     ok = ReceiveH26xFormat_Divisor(clientsocket, format);
-    if (!ok) { return; }
+    if (!ok) {
+        return WSAGetLastError();
+    }
 
     ok = ReceiveH26xFormat_Profile(clientsocket, format);
-    if (!ok) { return; }
+    if (!ok) {
+        return WSAGetLastError();
+    }
 
     ok = ReceiveH26xEncoder_Options(clientsocket, options);
-    if (!ok) { return; }
+    if (!ok) {
+        return WSAGetLastError();
+    }
+
+    ok = recv_u16(clientsocket, stream_port);
+    if (!ok) {
+		return WSAGetLastError();
+	}
 
     user.clientsocket = clientsocket;
     user.clientevent  = clientevent;
@@ -278,7 +313,7 @@ void PV_Stream(SOCKET clientsocket, HANDLE clientevent, MediaFrameReader const& 
 
     ReleaseSRWLockExclusive(&g_lock);
     reader.StartAsync().get();
-    WaitForSingleObject(clientevent, INFINITE);
+    WaitForSingleObject(clientevent, INFINITE); 
     reader.StopAsync().get();
     AcquireSRWLockExclusive(&g_lock);
     
@@ -309,7 +344,7 @@ static void PV_Intrinsics(SOCKET clientsocket, HANDLE clientevent, MediaFrameRea
 }
 
 // OK
-static void PV_Stream(SOCKET clientsocket)
+static int PV_Stream(SOCKET clientsocket)
 {
     HANDLE clientevent; // CloseHandle
     MRCVideoOptions options;
@@ -318,23 +353,32 @@ static void PV_Stream(SOCKET clientsocket)
     bool ok;
 
     ok = recv_u8(clientsocket, mode);
-    if (!ok) { return; }
+    if (!ok) {
+        return WSAGetLastError();
+    }
 
     ok = ReceiveH26xFormat_Video(clientsocket, format);
-    if (!ok) { return; }
+    if (!ok) {
+        return WSAGetLastError();
+    }
 
     if (mode & 4)
     {
         ok = ReceiveMRCVideoOptions(clientsocket, options);
-        if (!ok) { return; }
+        if (!ok) {
+            return WSAGetLastError();
+        }
         if (PersonalVideo_Status()) { PersonalVideo_Close(); }
         PersonalVideo_Open(options);
     }
 
-    if (!PersonalVideo_Status()) { return; }
+    if (!PersonalVideo_Status()) {
+        // not a socket issue
+        return -1;
+    }
 
     ok = PersonalVideo_SetFormat(format.width, format.height, format.framerate);
-    if (!ok) { return; }
+    if (!ok) { return -1; }
     
     clientevent = CreateEvent(NULL, TRUE, FALSE, NULL);
 
@@ -342,12 +386,12 @@ static void PV_Stream(SOCKET clientsocket)
     auto const& videoFrameReader = PersonalVideo_CreateFrameReader();
     // videoFrameReader.AcquisitionMode(MediaFrameReaderAcquisitionMode::Buffered);
     videoFrameReader.AcquisitionMode(MediaFrameReaderAcquisitionMode::Realtime);
-    
+
     switch (mode & 3)
     {
         case 0: PV_Stream<false>(clientsocket, clientevent, videoFrameReader, format); break;
-        case 1: PV_Stream<true>( clientsocket, clientevent, videoFrameReader, format); break;
-        case 2: PV_Intrinsics(   clientsocket, clientevent, videoFrameReader);         break;
+        case 1: PV_Stream<true>(clientsocket, clientevent, videoFrameReader, format); break;
+        case 2: PV_Intrinsics(clientsocket, clientevent, videoFrameReader);         break;
     }
 
     videoFrameReader.Close();
@@ -380,7 +424,9 @@ static DWORD WINAPI PV_EntryPoint(void *param)
         ShowMessage("PV: Waiting for client");
 
         clientsocket = accept(listensocket, NULL, NULL); // block
-        if (clientsocket == INVALID_SOCKET) { break; }
+        if (clientsocket == INVALID_SOCKET) {
+            break;
+        }
 
         ShowMessage("PV: Client connected");
 

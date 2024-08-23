@@ -93,9 +93,9 @@ void MQ_SI_Pop(uint32_t& command, uint8_t* data)
 	MQ_MSG msg;
 
 	{
-	CriticalSection cs(&g_lock_si);
-	msg = g_queue_si.front();
-	g_queue_si.pop();
+		CriticalSection cs(&g_lock_si);
+		msg = g_queue_si.front();
+		g_queue_si.pop();
 	}
 
 	command = msg.command;
@@ -124,16 +124,16 @@ static DWORD WINAPI MQ_EntryPoint_Send(void *param)
 
 	do
 	{
-	if (!MQ_SO_Wait()) { break; }
+		if (!MQ_SO_Wait()) { break; }
 
-	{
-	CriticalSection cs(&g_lock_so);
-	id = g_queue_so.front();
-	g_queue_so.pop();
-	}
+		{
+			CriticalSection cs(&g_lock_so);
+			id = g_queue_so.front();
+			g_queue_so.pop();
+		}
 
-	status = send(clientsocket, (char*)&id, sizeof(id), 0);
-	if (status != sizeof(id)) { break; }
+		status = send(clientsocket, (char*)&id, sizeof(id), 0);
+		if (status != sizeof(id)) { break; }
 	}
 	while (WaitForSingleObject(g_event_error, 0) == WAIT_TIMEOUT);
 
@@ -180,8 +180,8 @@ static void MQ_Procedure(SOCKET clientsocket)
 	msg.data = NULL;
 
 	{
-	CriticalSection cs(&g_lock_si);
-	g_queue_si.push(msg);
+		CriticalSection cs(&g_lock_si);
+		g_queue_si.push(msg);
 	}
 
 	ShowMessage("MQ: Waiting for restart signal");
@@ -201,18 +201,18 @@ static DWORD WINAPI MQ_EntryPoint(void* param)
 
 	do
 	{
-	ShowMessage("MQ: Waiting for client");
+		ShowMessage("MQ: Waiting for client");
 
-	clientsocket = accept(listensocket, NULL, NULL);
-	if (clientsocket == INVALID_SOCKET) { break; }
+		clientsocket = accept(listensocket, NULL, NULL);
+		if (clientsocket == INVALID_SOCKET) { break; }
 
-	ShowMessage("MQ: Client connected");
+		ShowMessage("MQ: Client connected");
 
-	MQ_Procedure(clientsocket);
+		MQ_Procedure(clientsocket);
 
-	closesocket(clientsocket);
+		closesocket(clientsocket);
 
-	ShowMessage("MQ: Client disconnected");
+		ShowMessage("MQ: Client disconnected");
 	}
 	while (WaitForSingleObject(g_event_quit, 0) == WAIT_TIMEOUT);
 
@@ -346,9 +346,9 @@ void MQX_Restart()
 {
 	while (g_queue_ci.size() > 0)
 	{
-	MQ_MSG msg = g_queue_ci.front();
-	g_queue_ci.pop();
-	if (msg.data) { free(msg.data); }
+		MQ_MSG msg = g_queue_ci.front();
+		g_queue_ci.pop();
+		if (msg.data) { free(msg.data); }
 	}
 	SetEvent(g_event_restart_cx);
 }
@@ -361,8 +361,8 @@ static void MQX_Procedure(SOCKET clientsocket)
 	CloseHandle(thread);
 
 	{
-	CriticalSection cs(&g_lock_co);
-	g_queue_co.push(~0UL);
+		CriticalSection cs(&g_lock_co);
+		g_queue_co.push(~0UL);
 	}
 
 	ShowMessage("MQX: Waiting for restart signal");
@@ -382,18 +382,18 @@ static DWORD WINAPI MQX_EntryPoint(void* param)
 
 	do
 	{
-	ShowMessage("MQX: Waiting for client");
+		ShowMessage("MQX: Waiting for client");
 
-	clientsocket = accept(listensocket, NULL, NULL);
-	if (clientsocket == INVALID_SOCKET) { break; }
+		clientsocket = accept(listensocket, NULL, NULL);
+		if (clientsocket == INVALID_SOCKET) { break; }
 
-	ShowMessage("MQX: Client connected");
+		ShowMessage("MQX: Client connected");
 
-	MQX_Procedure(clientsocket);
+		MQX_Procedure(clientsocket);
 
-	closesocket(clientsocket);
+		closesocket(clientsocket);
 
-	ShowMessage("MQX: Client disconnected");
+		ShowMessage("MQX: Client disconnected");
 	}
 	while (WaitForSingleObject(g_event_quit_cx, 0) == WAIT_TIMEOUT);
 

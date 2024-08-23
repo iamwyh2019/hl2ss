@@ -2,6 +2,7 @@
 #include <Windows.h>
 #include <stdio.h>
 #include <malloc.h>
+#include "log.h"
 
 //-----------------------------------------------------------------------------
 // Functions 
@@ -41,4 +42,27 @@ void ShowMessage(const wchar_t* format, ...)
 	text[len - 1] = L'\0';
 	OutputDebugStringW(text);
 	free(text);
+}
+
+// Global variable to store the callback function pointer
+UnityDebugCallback unityDebugCallback = nullptr;
+
+void SetUnityDebugCallback(UnityDebugCallback callback) {
+	unityDebugCallback = callback;
+}
+
+void UnityShowMessage(const char* format, ...) {
+	if (unityDebugCallback != nullptr) {
+		char buffer[1024];
+		va_list args;
+		va_start(args, format);
+		vsnprintf(buffer, sizeof(buffer), format, args);
+		va_end(args);
+
+		// Call the Unity callback with the formatted message
+		unityDebugCallback(buffer);
+	}
+	else {
+		ShowMessage("UnityDebugCallback is not set. Cannot send message to Unity.");
+	}
 }

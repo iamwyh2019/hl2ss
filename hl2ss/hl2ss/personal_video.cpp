@@ -191,10 +191,10 @@ bool PersonalVideo_SetFormat(uint16_t& width, uint16_t& height, uint8_t& framera
 
     if (g_shared)
     {
-    width     = (uint16_t)g_videoSource.CurrentFormat().VideoFormat().Width();
-    height    = (uint16_t)g_videoSource.CurrentFormat().VideoFormat().Height();
-    framerate = (uint8_t) g_videoSource.CurrentFormat().FrameRate().Numerator();
-    return true;
+        width     = (uint16_t)g_videoSource.CurrentFormat().VideoFormat().Width();
+        height    = (uint16_t)g_videoSource.CurrentFormat().VideoFormat().Height();
+        framerate = (uint8_t) g_videoSource.CurrentFormat().FrameRate().Numerator();
+        return true;
     }
 
     ok = PersonalVideo_FindVideoFormat(g_videoSource, width, height, framerate, selectedFormat);

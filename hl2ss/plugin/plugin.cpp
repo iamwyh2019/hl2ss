@@ -117,6 +117,7 @@ int OverrideWorldCoordinateSystem(void* scs_ptr)
 extern "C" {
     typedef void(*FrameCallback)(const MediaFrameReference*);
     typedef void(*FrameSentCallback)(const DWORD);
+    typedef void (*UnityDebugCallback)(const char*);
 }
 
 HL2SS_PLUGIN_EXPORT
@@ -131,4 +132,10 @@ int AddCustomFrameSentCallback(FrameSentCallback callback)
 {
     PV_SetCustomFrameSentCallback(callback);
     return 0;
+}
+
+HL2SS_PLUGIN_EXPORT
+void SetUnityDebug(UnityDebugCallback callback)
+{
+    SetUnityDebugCallback(callback);
 }

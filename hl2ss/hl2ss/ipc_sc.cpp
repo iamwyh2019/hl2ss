@@ -98,12 +98,12 @@ bool ReceiveH26xFormat_Profile(SOCKET clientsocket, H26xFormat& format)
 
 	switch (format.profile)
 	{
-	case H26xProfile::H264Profile_Base: break;
-	case H26xProfile::H264Profile_Main: break;
-	case H26xProfile::H264Profile_High: break;
-	case H26xProfile::H265Profile_Main: break;
-	case H26xProfile::H26xProfile_None: break;
-	default: return false;
+		case H26xProfile::H264Profile_Base: break;
+		case H26xProfile::H264Profile_Main: break;
+		case H26xProfile::H264Profile_High: break;
+		case H26xProfile::H265Profile_Main: break;
+		case H26xProfile::H26xProfile_None: break;
+		default: return false;
 	}
 
 	if (format.bitrate <= 0) { return false; }
