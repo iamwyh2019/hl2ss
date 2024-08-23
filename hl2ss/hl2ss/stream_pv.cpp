@@ -22,6 +22,9 @@
 
 #include <chrono>
 
+// disable winsock deprecated warnings
+#pragma warning(disable: 4996)
+
 using namespace winrt::Windows::Media::Capture;
 using namespace winrt::Windows::Media::Capture::Frames;
 using namespace winrt::Windows::Media::Devices::Core;
@@ -91,6 +94,9 @@ static PV_Mode2 g_calibration;
 // Custom callback
 FrameCallback g_frameCallBack = nullptr;
 FrameSentCallback g_frameSentCallBack = nullptr;
+
+// Generic UDP socket to send data
+SOCKET g_UDP_socket = INVALID_SOCKET;
 
 // Function to get system boot time
 int64_t GetSystemBootTime()
@@ -176,7 +182,7 @@ void PV_OnVideoFrameArrived(MediaFrameReader const& sender, MediaFrameArrivedEve
 
                 if constexpr (ENABLE_LOCATION)
                 {
-                pj.pose = Locator_GetTransformTo(frame.CoordinateSystem(), Locator_GetWorldCoordinateSystem(QPCTimestampToPerceptionTimestamp(timestamp)));
+                    pj.pose = Locator_GetTransformTo(frame.CoordinateSystem(), Locator_GetWorldCoordinateSystem(QPCTimestampToPerceptionTimestamp(timestamp)));
                 }
 
                 pSample->SetBlob(MF_USER_DATA_PAYLOAD, (UINT8*)&pj, sizeof(pj));
@@ -260,8 +266,14 @@ void PV_SendSample(IMFSample* pSample, void* param)
         pack_buffer(wsaBuf, 4, &g_pvp_sh.pose, sizeof(g_pvp_sh.pose));
     }
     
-    bool ok = send_multiple(user->clientsocket, wsaBuf, sizeof(wsaBuf) / sizeof(WSABUF), g_frameSentCallBack);
-    if (!ok) { SetEvent(user->clientevent); }
+    // bool ok = send_multiple(user->clientsocket, wsaBuf, sizeof(wsaBuf) / sizeof(WSABUF), g_frameSentCallBack);
+    bool ok = send_multiple_udp(g_UDP_socket, wsaBuf, sizeof(wsaBuf) / sizeof(WSABUF), &user->udp_address, g_frameSentCallBack);
+    if (!ok) {
+        SetEvent(user->clientevent);
+        // get the error code
+        int error = WSAGetLastError();
+        UnityShowMessage("PV: Error sending data: %d", error);
+    }
 
     pBuffer->Unlock();
     pBuffer->Release();
@@ -299,9 +311,30 @@ int PV_Stream(SOCKET clientsocket, HANDLE clientevent, MediaFrameReader const& r
 		return WSAGetLastError();
 	}
 
-    user.clientsocket = clientsocket;
+    // user.clientsocket = clientsocket;
+ 
+    // initialize the generic UDP socket
+    g_UDP_socket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (g_UDP_socket == INVALID_SOCKET) {
+		return WSAGetLastError();
+	}
+
+    // get the IP address of the client
+    sockaddr_in client_addr;
+    int client_addr_len = sizeof(client_addr);
+    if (getpeername(clientsocket, (sockaddr*)&client_addr, &client_addr_len) != 0) {
+        return WSAGetLastError();
+    }
+
+    // set the user's udp address
+    user.udp_address.sin_family = AF_INET;
+    user.udp_address.sin_port = htons(stream_port);
+    user.udp_address.sin_addr = client_addr.sin_addr;
+
     user.clientevent  = clientevent;
     user.format       = &format;
+
+    UnityShowMessage("PV: Streaming to %s:%d", inet_ntoa(user.udp_address.sin_addr), ntohs(user.udp_address.sin_port));
 
     CreateSinkWriterVideo(&pSink, &g_pSinkWriter, &g_dwVideoIndex, VideoSubtype::VideoSubtype_NV12, format, options, PV_SendSample<ENABLE_LOCATION>, &user);
 

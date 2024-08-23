@@ -21,6 +21,7 @@ SOCKET CreateSocket(char const* port)
 	addrinfo hints;
 	addrinfo* result;
 	SOCKET listensocket;
+	int ret;
 
 	ZeroMemory(&hints, sizeof(hints));
 
@@ -29,7 +30,9 @@ SOCKET CreateSocket(char const* port)
 	hints.ai_protocol = IPPROTO_TCP;
 	hints.ai_flags    = AI_PASSIVE;
 
-	getaddrinfo(NULL, port, &hints, &result);
+	ret = getaddrinfo(NULL, port, &hints, &result);
+	if (ret != 0) { return INVALID_SOCKET; }
+
 	listensocket = socket(result->ai_family, result->ai_socktype, result->ai_protocol);
 	bind(listensocket, result->ai_addr, (int)(result->ai_addrlen));
 	freeaddrinfo(result);
@@ -111,6 +114,18 @@ bool send_multiple(SOCKET s, LPWSABUF buffers, DWORD dwBufferCount, FrameSentCal
 	int status;
 
 	status = WSASend(s, buffers, dwBufferCount, &dwBytesSent, 0, NULL, NULL);
+	if (status != SOCKET_ERROR && callback != nullptr) {
+		callback(dwBytesSent);
+	}
+	return status != SOCKET_ERROR;
+}
+
+bool send_multiple_udp(SOCKET s, LPWSABUF buffers, DWORD dwBufferCount, sockaddr_in *to, FrameSentCallback callback)
+{
+	DWORD dwBytesSent;
+	int status;
+
+	status = WSASendTo(s, buffers, dwBufferCount, &dwBytesSent, 0, (sockaddr*)to, sizeof(sockaddr_in), NULL, NULL);
 	if (status != SOCKET_ERROR && callback != nullptr) {
 		callback(dwBytesSent);
 	}

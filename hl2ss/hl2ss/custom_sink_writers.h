@@ -32,6 +32,8 @@ struct HookCallbackSocket
     SOCKET clientsocket;
     HANDLE clientevent;
     void*  format;
+    // in the case of UDP, the destination address
+    sockaddr_in udp_address;
 };
 
 void CreateSinkWriterAudio(CustomMediaSink** ppSink, IMFSinkWriter** ppSinkWriter, DWORD* pdwAudioIndex, AudioSubtype input_subtype, AACFormat  const& format, HOOK_SINK_PROC hookproc, void* hookparam);

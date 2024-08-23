@@ -15,4 +15,5 @@ bool recv_u32(SOCKET socket, uint32_t& dword);
 bool recv(SOCKET clientsocket, char* buf, int bytes);
 
 bool send_multiple(SOCKET s, LPWSABUF buffers, DWORD dwBufferCount, FrameSentCallback callback = nullptr);
+bool send_multiple_udp(SOCKET s, LPWSABUF buffers, DWORD dwBufferCount, sockaddr_in *to, FrameSentCallback callback = nullptr);
 void pack_buffer(WSABUF* dst, int index, void const* buffer, ULONG length);
