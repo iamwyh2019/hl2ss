@@ -1,5 +1,7 @@
 
 import multiprocessing as mp
+from typing import Dict
+from hl2ss import _context_manager
 
 
 class TimePreference:
@@ -134,7 +136,7 @@ def _create_interface_source():
     return _net_source(mp.Queue())
 
 
-def _create_source(receiver, source_wires, interconnect_wires):
+def _create_source(receiver: _context_manager, source_wires, interconnect_wires):
     return _source(receiver, mp.Event(), source_wires, interconnect_wires)
 
 
@@ -364,7 +366,7 @@ def _create_sink(sink_wires, interconnect_wires):
 #------------------------------------------------------------------------------
 
 class _module:
-    def __init__(self, receiver, buffer_size):
+    def __init__(self, receiver: _context_manager, buffer_size: int):
         self._source_wires = _create_interface_source()
         self._interconnect_wires = _create_interface_interconnect()
         self._source = _create_source(receiver, self._source_wires, self._interconnect_wires)
@@ -393,13 +395,13 @@ class _module:
 
 class producer:
     def __init__(self):
-        self._rx = dict()
-        self._producer = dict()
+        self._rx: Dict[int, _context_manager] = dict()
+        self._producer: Dict[int, _module] = dict()
 
-    def configure(self, port, receiver):
+    def configure(self, port: int, receiver: _context_manager):
         self._rx[port] = receiver
 
-    def initialize(self, port, buffer_size):
+    def initialize(self, port: int, buffer_size: int):
         self._producer[port] = _module(self._rx[port], buffer_size)
 
     def start(self, port):        

@@ -4,6 +4,7 @@ import socket
 import struct
 import cv2
 import av
+from typing import List, Tuple, Callable
 
 
 # Stream TCP Ports
@@ -24,6 +25,10 @@ class StreamPort:
     EXTENDED_AUDIO       = 3818
     EXTENDED_VIDEO       = 3819
 
+# Stream UDP Ports
+class StreamUDPPort:
+    PERSONAL_VIDEO       = 5000
+
 
 # IPC TCP Ports
 class IPCPort:
@@ -41,7 +46,7 @@ class ChunkSize:
     RM_DEPTH_AHAT        = 4096
     RM_DEPTH_LONGTHROW   = 4096
     RM_IMU               = 4096
-    PERSONAL_VIDEO       = 4096
+    PERSONAL_VIDEO       = 65536
     MICROPHONE           = 512
     SPATIAL_INPUT        = 1024
     EXTENDED_EYE_TRACKER = 256
@@ -274,18 +279,38 @@ class _RANGEOF:
     U64_MAX = 0xFFFFFFFFFFFFFFFF
 
 
+class _udpreceiver:
+    def open(self, port):
+        self._socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self._socket.bind(('0.0.0.0', port))
+        print('UDP listening on {}'.format(port))
+
+    def recv(self, chunk_size: int, recv_callback: Callable[[bytes], None] = None):
+        chunk, _ = self._socket.recvfrom(chunk_size)
+        
+        if (recv_callback is not None):
+            recv_callback(chunk)
+        return chunk
+
+    def close(self):
+        self._socket.close()
+
+
 class _client:
     def open(self, host, port):
         self._socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._socket.connect((host, port))
+        print('TCP connected to {}:{}'.format(host, port))
 
     def sendall(self, data):
         self._socket.sendall(data)
 
-    def recv(self, chunk_size):
+    def recv(self, chunk_size: int, recv_callback: Callable[[bytes], None] = None):
         chunk = self._socket.recv(chunk_size)
         if (len(chunk) <= 0):
             raise Exception('connection closed')
+        if (recv_callback is not None):
+            recv_callback(chunk)
         return chunk
 
     def download(self, total, chunk_size):
@@ -383,24 +408,57 @@ class _unpacker:
 #------------------------------------------------------------------------------
 
 class _gatherer:
-    def open(self, host, port, chunk_size, mode):
+    def open(self, host: str, port: int, chunk_size: int, mode, recv_callback: Callable[[bytes], None] = None):
         self._client = _client()
         self._unpacker = _unpacker()
         self._chunk_size = chunk_size
         self._unpacker.reset(mode)
         self._client.open(host, port)
+        self._recv_callback = recv_callback
         
     def sendall(self, data):
         self._client.sendall(data)
 
     def get_next_packet(self):
         while (True):
-            self._unpacker.extend(self._client.recv(self._chunk_size))
+            self._unpacker.extend(self._client.recv(self._chunk_size, self._recv_callback))
             if (self._unpacker.unpack()):
                 return self._unpacker.get()
 
     def close(self):
         self._client.close()
+
+
+class _gatherer_udp:
+    def open(self, host: str, control_port: int, stream_port: int, chunk_size: int, mode, recv_callback: Callable[[bytes], None] = None):
+        # TCP for control
+        self._client = _client()
+        # UDP for stream
+        self._receiver = _udpreceiver()
+        self._unpacker = _unpacker()
+        self._chunk_size = chunk_size
+        self._unpacker.reset(mode)
+        self._client.open(host, control_port)
+        self._receiver.open(stream_port)
+        self._recv_callback = recv_callback
+        
+    def sendall(self, data):
+        self._client.sendall(data)
+
+    def get_next_packet(self):
+        while (True):
+            try:
+                chunk = self._receiver.recv(self._chunk_size, self._recv_callback)
+            except Exception as e:
+                print("UDP receiver error: {}".format(e))
+                continue
+            self._unpacker.extend(chunk)
+            if (self._unpacker.unpack()):
+                return self._unpacker.get()
+
+    def close(self):
+        self._client.close()
+        self._receiver.close()
 
 
 #------------------------------------------------------------------------------
@@ -433,6 +491,11 @@ class H26xEncoderProperty:
 
 def _create_configuration_for_mode(mode):
     return struct.pack('<B', mode)
+
+
+def _create_configuration_for_udp_port(port):
+    # port is 0~65535
+    return struct.pack('<H', port)
 
 
 def _create_configuration_for_video_format(width, height, framerate):
@@ -579,10 +642,14 @@ def _connect_client_rm_imu(host, port, chunk_size, mode):
     return c
 
 
-def _connect_client_pv(host, port, chunk_size, mode, width, height, framerate, divisor, profile, level, bitrate, options):
-    c = _gatherer()
-    c.open(host, port, chunk_size, mode)
+def _connect_client_pv(host: str, control_port: int, stream_port: int, chunk_size: int, mode, width: int, height: int,
+                       framerate: int, divisor, profile, level, bitrate, options, recv_callback: Callable[[bytes], None] = None) -> _gatherer_udp:
+    c = _gatherer_udp()
+    c.open(host, control_port, stream_port, chunk_size, mode, recv_callback)
+    # send video configuration
     c.sendall(_create_configuration_for_pv(mode, width, height, framerate, divisor, profile, level, bitrate, options))
+    # also send the UDP port for the stream
+    c.sendall(_create_configuration_for_udp_port(stream_port))
     return c
 
 
@@ -733,9 +800,10 @@ class rx_rm_imu(_context_manager):
 
 
 class rx_pv(_context_manager):
-    def __init__(self, host, port, chunk, mode, width, height, framerate, divisor, profile, level, bitrate, options):
+    def __init__(self, host: str, control_port: int, stream_port: int, chunk: int, mode: int, width: int, height: int, framerate: int, divisor, profile, level, bitrate, options, recv_callback: Callable[[bytes], None] = None):
         self.host = host
-        self.port = port
+        self.control_port = control_port
+        self.stream_port = stream_port
         self.chunk = chunk
         self.mode = mode
         self.width = width
@@ -746,9 +814,11 @@ class rx_pv(_context_manager):
         self.level = level
         self.bitrate = bitrate
         self.options = options
+        self.recv_callback = recv_callback
 
     def open(self):
-        self._client = _connect_client_pv(self.host, self.port, self.chunk, self.mode, self.width, self.height, self.framerate, self.divisor, self.profile, self.level, self.bitrate, self.options)
+        # _gatherer_udp
+        self._client = _connect_client_pv(self.host, self.control_port, self.stream_port, self.chunk, self.mode, self.width, self.height, self.framerate, self.divisor, self.profile, self.level, self.bitrate, self.options, self.recv_callback)
 
     def get_next_packet(self):
         return self._client.get_next_packet()
@@ -1470,8 +1540,8 @@ class rx_decoded_rm_depth_longthrow(rx_rm_depth_longthrow):
 
 
 class rx_decoded_pv(rx_pv):
-    def __init__(self, host, port, chunk, mode, width, height, framerate, divisor, profile, level, bitrate, options, format):
-        super().__init__(host, port, chunk, mode, width, height, framerate, divisor, profile, level, bitrate, options)
+    def __init__(self, host: str, control_port: int, stream_port: int, chunk: int, mode: int, width: int, height: int, framerate: int, divisor, profile, level, bitrate, options, format, recv_callback=None):
+        super().__init__(host, control_port, stream_port, chunk, mode, width, height, framerate, divisor, profile, level, bitrate, options, recv_callback)
         self.format = format
         self._codec = decode_pv(profile)
 

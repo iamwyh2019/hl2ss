@@ -1,6 +1,7 @@
 
 import struct
 import hl2ss
+from typing import Callable
 
 
 #------------------------------------------------------------------------------
@@ -121,7 +122,10 @@ def rx_rm_imu(host, port, chunk=hl2ss.ChunkSize.RM_IMU, mode=hl2ss.StreamMode.MO
     return hl2ss.rx_rm_imu(host, port, chunk, mode)
 
 
-def rx_pv(host, port, chunk=hl2ss.ChunkSize.PERSONAL_VIDEO, mode=hl2ss.StreamMode.MODE_1, width=1920, height=1080, framerate=30, divisor=1, profile=hl2ss.VideoProfile.H265_MAIN, level=hl2ss.H26xLevel.DEFAULT, bitrate=None, options=None, decoded_format='bgr24'):
+def rx_pv(host: str, control_port: int, stream_port: int, chunk: int=hl2ss.ChunkSize.PERSONAL_VIDEO, mode: int=hl2ss.StreamMode.MODE_1,
+          width: int=1920, height: int=1080, framerate: int=30, divisor=1, profile=hl2ss.VideoProfile.H265_MAIN,
+          level=hl2ss.H26xLevel.DEFAULT, bitrate=None, options=None, decoded_format='bgr24',
+          recv_callback: Callable[[bytes], None] = None):
     if (bitrate is None):
         bitrate = get_video_codec_default_bitrate(width, height, framerate, divisor, profile)
 
@@ -130,7 +134,8 @@ def rx_pv(host, port, chunk=hl2ss.ChunkSize.PERSONAL_VIDEO, mode=hl2ss.StreamMod
     else:
         options[hl2ss.H26xEncoderProperty.CODECAPI_AVEncMPVGOPSize] = options.get(hl2ss.H26xEncoderProperty.CODECAPI_AVEncMPVGOPSize, get_video_codec_default_gop_size(framerate, divisor, profile))
     
-    return hl2ss.rx_decoded_pv(host, port, chunk, mode, width, height, framerate, divisor, profile, level, bitrate, options, decoded_format) if (decoded_format) else hl2ss.rx_pv(host, port, chunk, mode, width, height, framerate, divisor, profile, level, bitrate, options)
+    return hl2ss.rx_decoded_pv(host, control_port, stream_port, chunk, mode, width, height, framerate, divisor, profile, level, bitrate, options, decoded_format, recv_callback)\
+          if (decoded_format) else hl2ss.rx_pv(host, control_port, stream_port, chunk, mode, width, height, framerate, divisor, profile, level, bitrate, options, recv_callback)
 
 
 def rx_microphone(host, port, chunk=hl2ss.ChunkSize.MICROPHONE, profile=hl2ss.AudioProfile.AAC_24000, level=hl2ss.AACLevel.L2, decoded=True):
