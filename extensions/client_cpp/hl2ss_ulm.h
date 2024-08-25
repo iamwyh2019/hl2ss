@@ -2,6 +2,7 @@
 #include <stdint.h>
 #include <vector>
 #include <exception>
+#include <stdexcept>
 #include <memory>
 
 #ifdef WIN32
@@ -774,6 +775,12 @@ public:
         m_data  = { data, data + size };
     }
 
+    void clear()
+    {
+        m_count = 0;
+        m_data.clear();
+    }
+
     void add_box(sm_box box)
     {
         m_count++;
@@ -834,6 +841,12 @@ public:
     {
         m_count = count;
         m_data  = { data, data + size };
+    }
+
+    void clear()
+    {
+        m_count = 0;
+        m_data.clear();        
     }
 
     void add_task(guid id, double max_triangles_per_cubic_meter, uint32_t vertex_position_format, uint32_t triangle_index_format, uint32_t vertex_normal_format, bool include_vertex_normals, bool include_bounds)
@@ -962,6 +975,18 @@ public:
         m_count = 0;
     }
 
+    umq_command_buffer(uint32_t count, uint8_t const* data, uint64_t size)
+    {
+        m_count = count;
+        m_buffer  = { data, data + size };
+    }
+
+    void clear()
+    {
+        m_count = 0;
+        m_buffer.clear();
+    }
+
     void add(uint32_t id, void const* data, uint64_t size)
     {
         push_u32(m_buffer, id);
@@ -970,25 +995,19 @@ public:
         m_count++;
     }
 
-    void clear()
+    uint32_t get_count()
     {
-        m_buffer.clear();
-        m_count = 0;
+        return m_count;
     }
 
-    uint8_t const* data()
+    uint8_t const* get_data()
     {
         return m_buffer.data();
     }
 
-    uint64_t size()
+    uint64_t get_size()
     {
         return m_buffer.size();
-    }
-
-    uint32_t count()
-    {
-        return m_count;
     }
 };
 
@@ -1366,6 +1385,24 @@ struct configuration_extended_audio
     uint8_t _reserved[2];
 };
 
+struct configuration_pv_subsystem
+{
+    uint8_t enable_mrc;
+    uint8_t hologram_composition;
+    uint8_t recording_indicator;
+    uint8_t video_stabilization;
+    uint8_t blank_protected;
+    uint8_t show_mesh;
+    uint8_t shared;
+    uint8_t _reserved_0;
+    float global_opacity;
+    float output_width;
+    float output_height;
+    uint32_t video_stabilization_length;
+    uint32_t hologram_perspective;
+    uint32_t _reserved_1;
+};
+
 struct packet
 {
     int64_t frame_stamp;
@@ -1490,7 +1527,7 @@ void* get_by_timestamp(void* source, uint64_t timestamp, int32_t time_preference
 //-----------------------------------------------------------------------------
 
 HL2SS_CLIENT_IMPORT
-int32_t start_subsystem_pv(char const* host, uint16_t port, uint8_t enable_mrc=false, uint8_t hologram_composition=true, uint8_t recording_indicator=false, uint8_t video_stabilization=false, uint8_t blank_protected=false, uint8_t show_mesh=false, uint8_t shared=false, float global_opacity=0.9f, float output_width=0.0f, float output_height=0.0f, uint32_t video_stabilization_length=0, uint32_t hologram_perspective=hl2ss::hologram_perspective::PV);
+int32_t start_subsystem_pv(char const* host, uint16_t port, configuration_pv_subsystem const& c);
 
 HL2SS_CLIENT_IMPORT
 int32_t stop_subsystem_pv(char const* host, uint16_t port);
@@ -2238,8 +2275,14 @@ void initialize()
     handle::check_result(hl2ss::ulm::initialize());
 }
 
-HL2SS_INLINE
-hl2ss::ulm::configuration_rm_vlc create_configuration_rm_vlc()
+template<typename T>
+T create_configuration()
+{
+    return T();
+}
+
+template<>
+hl2ss::ulm::configuration_rm_vlc create_configuration()
 {
     hl2ss::ulm::configuration_rm_vlc c;
 
@@ -2255,8 +2298,8 @@ hl2ss::ulm::configuration_rm_vlc create_configuration_rm_vlc()
     return c;
 }
 
-HL2SS_INLINE
-hl2ss::ulm::configuration_rm_depth_ahat create_configuration_rm_depth_ahat()
+template<>
+hl2ss::ulm::configuration_rm_depth_ahat create_configuration()
 {
     hl2ss::ulm::configuration_rm_depth_ahat c;
 
@@ -2273,8 +2316,8 @@ hl2ss::ulm::configuration_rm_depth_ahat create_configuration_rm_depth_ahat()
     return c;
 }
 
-HL2SS_INLINE
-hl2ss::ulm::configuration_rm_depth_longthrow create_configuration_rm_depth_longthrow()
+template<>
+hl2ss::ulm::configuration_rm_depth_longthrow create_configuration()
 {
     hl2ss::ulm::configuration_rm_depth_longthrow c;
 
@@ -2286,8 +2329,8 @@ hl2ss::ulm::configuration_rm_depth_longthrow create_configuration_rm_depth_longt
     return c;
 }
 
-HL2SS_INLINE
-hl2ss::ulm::configuration_rm_imu create_configuration_rm_imu()
+template<>
+hl2ss::ulm::configuration_rm_imu create_configuration()
 {
     hl2ss::ulm::configuration_rm_imu c;
 
@@ -2297,8 +2340,8 @@ hl2ss::ulm::configuration_rm_imu create_configuration_rm_imu()
     return c;
 }
 
-HL2SS_INLINE
-hl2ss::ulm::configuration_pv create_configuration_pv()
+template<>
+hl2ss::ulm::configuration_pv create_configuration()
 {
     hl2ss::ulm::configuration_pv c;
 
@@ -2318,8 +2361,8 @@ hl2ss::ulm::configuration_pv create_configuration_pv()
     return c;
 }
 
-HL2SS_INLINE
-hl2ss::ulm::configuration_microphone create_configuration_microphone()
+template<>
+hl2ss::ulm::configuration_microphone create_configuration()
 {
     hl2ss::ulm::configuration_microphone c;
 
@@ -2330,8 +2373,8 @@ hl2ss::ulm::configuration_microphone create_configuration_microphone()
     return c;
 }
 
-HL2SS_INLINE
-hl2ss::ulm::configuration_si create_configuration_si()
+template<>
+hl2ss::ulm::configuration_si create_configuration()
 {
     hl2ss::ulm::configuration_si c;
 
@@ -2340,8 +2383,8 @@ hl2ss::ulm::configuration_si create_configuration_si()
     return c;
 }
 
-HL2SS_INLINE
-hl2ss::ulm::configuration_eet create_configuration_eet()
+template<>
+hl2ss::ulm::configuration_eet create_configuration()
 {
     hl2ss::ulm::configuration_eet c;
 
@@ -2351,8 +2394,8 @@ hl2ss::ulm::configuration_eet create_configuration_eet()
     return c;
 }
 
-HL2SS_INLINE
-hl2ss::ulm::configuration_extended_audio create_configuration_extended_audio()
+template<>
+hl2ss::ulm::configuration_extended_audio create_configuration()
 {
     hl2ss::ulm::configuration_extended_audio c;
 
@@ -2362,6 +2405,27 @@ hl2ss::ulm::configuration_extended_audio create_configuration_extended_audio()
     c.microphone_gain = 1.0f;
     c.profile = hl2ss::audio_profile::AAC_24000;
     c.level = hl2ss::aac_level::L2;
+
+    return c;
+}
+
+template<>
+hl2ss::ulm::configuration_pv_subsystem create_configuration()
+{
+    hl2ss::ulm::configuration_pv_subsystem c;
+
+    c.enable_mrc = false;
+    c.hologram_composition = true;
+    c.recording_indicator = false;
+    c.video_stabilization = false;
+    c.blank_protected = false;
+    c.show_mesh = false;
+    c.shared = false;
+    c.global_opacity = 0.9f;
+    c.output_width = 0.0f;
+    c.output_height = 0.0f;
+    c.video_stabilization_length = 0;
+    c.hologram_perspective = hl2ss::hologram_perspective::PV;
 
     return c;
 }
@@ -2379,9 +2443,9 @@ std::unique_ptr<T> open_ipc(char const* host, uint16_t port)
 }
 
 HL2SS_INLINE
-void start_subsystem_pv(char const* host, uint16_t port, uint8_t enable_mrc=false, uint8_t hologram_composition=true, uint8_t recording_indicator=false, uint8_t video_stabilization=false, uint8_t blank_protected=false, uint8_t show_mesh=false, uint8_t shared=false, float global_opacity=0.9f, float output_width=0.0f, float output_height=0.0f, uint32_t video_stabilization_length=0, uint32_t hologram_perspective=hl2ss::hologram_perspective::PV)
+void start_subsystem_pv(char const* host, uint16_t port, hl2ss::ulm::configuration_pv_subsystem const& c)
 {
-    handle::check_result(hl2ss::ulm::start_subsystem_pv(host, port, enable_mrc, hologram_composition, recording_indicator, video_stabilization, blank_protected, show_mesh, shared, global_opacity, output_width, output_height, video_stabilization_length, hologram_perspective));
+    handle::check_result(hl2ss::ulm::start_subsystem_pv(host, port, c));
 }
 
 HL2SS_INLINE

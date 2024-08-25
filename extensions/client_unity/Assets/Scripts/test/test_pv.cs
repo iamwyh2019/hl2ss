@@ -1,9 +1,8 @@
 
 using System.Runtime.InteropServices;
-using UnityEditor.Experimental.GraphView;
 using UnityEngine;
 
-public class viewer : MonoBehaviour
+public class test_pv : MonoBehaviour
 {
     public GameObject quad_pv;
     private string host;
@@ -16,7 +15,7 @@ public class viewer : MonoBehaviour
     {
         host = run_once.host_address;
 
-        hl2ss.ulm.configuration_pv configuration = hl2ss.svc.create_configuration_pv();
+        hl2ss.svc.create_configuration(out hl2ss.ulm.configuration_pv configuration);
 
         configuration.width = 1280;
         configuration.height = 720;
@@ -54,10 +53,12 @@ public class viewer : MonoBehaviour
 
         pv_frame_size = configuration.width * configuration.height * bpp;
 
-        hl2ss.svc.start_subsystem_pv(host, hl2ss.stream_port.PERSONAL_VIDEO);
+        hl2ss.svc.create_configuration(out hl2ss.ulm.configuration_pv_subsystem configuration_subsystem);
+
+        hl2ss.svc.start_subsystem_pv(host, hl2ss.stream_port.PERSONAL_VIDEO, configuration_subsystem);
 
         var calibration_handle = hl2ss.svc.download_calibration(host, hl2ss.stream_port.PERSONAL_VIDEO, configuration);
-        var calibration = Marshal.PtrToStructure<hl2ss.calibration_pv>(calibration_handle.address);
+        var calibration = Marshal.PtrToStructure<hl2ss.calibration_pv>(calibration_handle.data);
         calibration_handle.destroy();
 
         source_pv = hl2ss.svc.open_stream(host, hl2ss.stream_port.PERSONAL_VIDEO, 300, configuration);
@@ -77,16 +78,6 @@ public class viewer : MonoBehaviour
         hl2ss.pv_metadata metadata = Marshal.PtrToStructure<hl2ss.pv_metadata>(region.metadata);
         hl2ss.matrix_4x4 pose = Marshal.PtrToStructure<hl2ss.matrix_4x4>(packet.pose);
 
-        Debug.Log(packet.frame_stamp);
-        Debug.Log(packet.timestamp);
-        Debug.Log(metadata.f.x);
-        Debug.Log(metadata.lens_position);
-        Debug.Log(metadata.focus_state);
-        Debug.Log(metadata.white_balance_gains.x);
-        Debug.Log(metadata.white_balance_gains.y);
-        Debug.Log(metadata.white_balance_gains.z);
-        Debug.Log(pose.m[15]);
-
         tex_pv.LoadRawTextureData(region.image, pv_frame_size);
         tex_pv.Apply();
 
@@ -95,6 +86,8 @@ public class viewer : MonoBehaviour
 
     void OnApplicationQuit()
     {
+        if (source_pv == null) { return; }
+
         source_pv.destroy();
         hl2ss.svc.stop_subsystem_pv(host, hl2ss.stream_port.PERSONAL_VIDEO);
     }

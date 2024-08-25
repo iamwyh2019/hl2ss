@@ -89,7 +89,7 @@ void test_rm_vlc(char const* host)
     uint16_t port = hl2ss::stream_port::RM_VLC_LEFTFRONT;
     uint64_t buffer_size = 300;
 
-    auto configuration = hl2ss::svc::create_configuration_rm_vlc();
+    auto configuration = hl2ss::svc::create_configuration<hl2ss::ulm::configuration_rm_vlc>();
     auto calibration = hl2ss::svc::download_calibration<hl2ss::calibration_rm_vlc>(host, port, &configuration);
     auto source = hl2ss::svc::open_stream(host, port, buffer_size, &configuration);
 
@@ -124,7 +124,7 @@ void test_rm_depth_ahat(char const* host)
     uint16_t port = hl2ss::stream_port::RM_DEPTH_AHAT;
     uint64_t buffer_size = 450;
 
-    auto configuration = hl2ss::svc::create_configuration_rm_depth_ahat();
+    auto configuration = hl2ss::svc::create_configuration<hl2ss::ulm::configuration_rm_depth_ahat>();
     auto calibration = hl2ss::svc::download_calibration<hl2ss::calibration_rm_depth_ahat>(host, port, &configuration);
     auto source = hl2ss::svc::open_stream(host, port, buffer_size, &configuration);
 
@@ -165,7 +165,7 @@ void test_rm_depth_longthrow(char const* host)
     uint16_t port = hl2ss::stream_port::RM_DEPTH_LONGTHROW;
     uint64_t buffer_size = 50;
 
-    auto configuration = hl2ss::svc::create_configuration_rm_depth_longthrow();
+    auto configuration = hl2ss::svc::create_configuration<hl2ss::ulm::configuration_rm_depth_longthrow>();
     auto calibration = hl2ss::svc::download_calibration<hl2ss::calibration_rm_depth_longthrow>(host, port, &configuration);
     auto source = hl2ss::svc::open_stream(host, port, buffer_size, &configuration);
 
@@ -206,7 +206,7 @@ void test_rm_imu(char const* host)
     uint16_t port = hl2ss::stream_port::RM_IMU_ACCELEROMETER;
     uint64_t buffer_size = 100;
 
-    auto configuration = hl2ss::svc::create_configuration_rm_imu();
+    auto configuration = hl2ss::svc::create_configuration<hl2ss::ulm::configuration_rm_imu>();
     try
     {
         auto calibration = hl2ss::svc::download_calibration<hl2ss::calibration_rm_imu>(host, port, &configuration);
@@ -243,9 +243,9 @@ void test_pv(char const* host)
 {
     uint16_t port = hl2ss::stream_port::PERSONAL_VIDEO;
     uint64_t buffer_size = 300;
-    bool enable_mrc = false;
 
-    auto configuration = hl2ss::svc::create_configuration_pv();
+    auto configuration_subsystem = hl2ss::svc::create_configuration<hl2ss::ulm::configuration_pv_subsystem>();
+    auto configuration = hl2ss::svc::create_configuration<hl2ss::ulm::configuration_pv>();
 
     configuration.width = 1920;
     configuration.height = 1080;
@@ -263,7 +263,7 @@ void test_pv(char const* host)
     default: throw std::runtime_error("Invalid PV decoded format");
     }
 
-    hl2ss::svc::start_subsystem_pv(host, port, enable_mrc);
+    hl2ss::svc::start_subsystem_pv(host, port, configuration_subsystem);
 
     auto calibration = hl2ss::svc::download_calibration<hl2ss::calibration_pv>(host, port, &configuration);
     auto source = hl2ss::svc::open_stream(host, port, buffer_size, &configuration);
@@ -301,7 +301,7 @@ void test_microphone(char const* host)
     uint16_t port = hl2ss::stream_port::MICROPHONE;
     uint64_t buffer_size = 100;
 
-    auto configuration = hl2ss::svc::create_configuration_microphone();
+    auto configuration = hl2ss::svc::create_configuration<hl2ss::ulm::configuration_microphone>();
     auto source = hl2ss::svc::open_stream(host, port, buffer_size, &configuration);
 
     std::string window_name = hl2ss::get_port_name(port);
@@ -331,7 +331,7 @@ void test_si(char const* host)
     uint16_t port = hl2ss::stream_port::SPATIAL_INPUT;
     uint64_t buffer_size = 300;
 
-    auto configuration = hl2ss::svc::create_configuration_si();
+    auto configuration = hl2ss::svc::create_configuration<hl2ss::ulm::configuration_si>();
     auto source = hl2ss::svc::open_stream(host, port, buffer_size, &configuration);
 
     std::string window_name = hl2ss::get_port_name(port);
@@ -365,7 +365,7 @@ void test_eet(char const* host)
     uint16_t port = hl2ss::stream_port::EXTENDED_EYE_TRACKER;
     uint64_t buffer_size = 900;
 
-    auto configuration = hl2ss::svc::create_configuration_eet();
+    auto configuration = hl2ss::svc::create_configuration<hl2ss::ulm::configuration_eet>();
 
     configuration.framerate = hl2ss::eet_framerate::FPS_90;
 
@@ -405,7 +405,7 @@ void test_extended_audio(char const* host)
     uint16_t port = hl2ss::stream_port::EXTENDED_AUDIO;
     uint64_t buffer_size = 100;
 
-    auto configuration = hl2ss::svc::create_configuration_extended_audio();
+    auto configuration = hl2ss::svc::create_configuration<hl2ss::ulm::configuration_extended_audio>();
     auto device_list = hl2ss::svc::download_device_list(host, port);
     auto source = hl2ss::svc::open_stream(host, port, buffer_size, &configuration);
 
@@ -435,12 +435,17 @@ void test_extended_video(char const* host)
 {
     uint16_t port = hl2ss::stream_port::EXTENDED_VIDEO;
     uint64_t buffer_size = 100;
-    bool shared = false;
     float group_index = 0;
     float source_index = 2;
     float profile_index = 4;
 
-    auto configuration = hl2ss::svc::create_configuration_pv();
+    auto configuration_subsystem = hl2ss::svc::create_configuration<hl2ss::ulm::configuration_pv_subsystem>();
+
+    configuration_subsystem.global_opacity = group_index;
+    configuration_subsystem.output_width = source_index;
+    configuration_subsystem.output_height = profile_index;
+
+    auto configuration = hl2ss::svc::create_configuration<hl2ss::ulm::configuration_pv>();
 
     configuration.width = 1280;
     configuration.height = 720;
@@ -458,7 +463,7 @@ void test_extended_video(char const* host)
     default: throw std::runtime_error("Invalid PV decoded format");
     }
 
-    hl2ss::svc::start_subsystem_pv(host, port, 0, 0, 0, 0, 0, 0, shared, group_index, source_index, profile_index, 0, 0);
+    hl2ss::svc::start_subsystem_pv(host, port, configuration_subsystem);
 
     auto device_list = hl2ss::svc::download_device_list(host, port);
     auto source = hl2ss::svc::open_stream(host, port, buffer_size, &configuration);
@@ -655,7 +660,7 @@ void test_umq(char const* host)
 
     buffer.add(0xFFFFFFFE, text, sizeof(text));
 
-    ipc->push(buffer.data(), buffer.size());
+    ipc->push(buffer.get_data(), buffer.get_size());
     ipc->pull(response, sizeof(response) / sizeof(uint32_t));
 
     std::cout << "response: " << response[0] << std::endl;
@@ -693,7 +698,7 @@ void test_gmq(char const* host)
 int main()
 {
     char const* host = "192.168.1.7";
-    int test_id = 4;
+    int test_id = 9;
 
     try
     {
