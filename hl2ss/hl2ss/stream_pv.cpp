@@ -116,6 +116,99 @@ int64_t GetFrameUTCTimestamp(int64_t timestamp)
 
 
 //-----------------------------------------------------------------------------
+// Delay measurement-related definitions
+//-----------------------------------------------------------------------------
+static HANDLE g_delay_thread = NULL;
+
+typedef void (*DataReceivedCallback)(const char* data, int length, sockaddr_in* clientAddr);
+
+void onDelayDataReceived(const char* data, int length, sockaddr_in* clientAddr)
+{
+	// data is a whole frame
+    // TODO
+    UnityShowMessage("Received data from %s:%d with length %d", inet_ntoa(clientAddr->sin_addr), ntohs(clientAddr->sin_port), length);
+}
+
+struct ThreadParams
+{
+	SOCKET socket;
+	DataReceivedCallback callback;
+    HANDLE clientevent;
+};
+
+static DWORD WINAPI udpListenerThread(LPVOID lpParam)
+{
+	ThreadParams* params = (ThreadParams*)lpParam;
+	SOCKET socket = params->socket;
+	DataReceivedCallback callback = params->callback;
+    HANDLE clientevent = params->clientevent;
+
+	sockaddr_in clientAddr;
+	int clientAddrSize = sizeof(clientAddr);
+	char buffer[8192];
+	int bytesRead;
+
+    do
+    {
+		bytesRead = recvfrom(socket, buffer, sizeof(buffer), 0, (sockaddr*)&clientAddr, &clientAddrSize);
+        if (bytesRead == SOCKET_ERROR)
+        {
+			int error = WSAGetLastError();
+            if (error == WSAECONNRESET)
+            {
+				// client disconnected
+				break;
+			}
+            else
+            {
+				// error
+				break;
+			}
+		}
+
+		callback(buffer, bytesRead, &clientAddr);
+	}
+    while (WaitForSingleObject(clientevent, 0) == WAIT_TIMEOUT);
+
+    // cleanup
+    closesocket(socket);
+
+    return 0;
+}
+
+static void runUdpListener(uint16_t port, DataReceivedCallback callback, HANDLE clientevent)
+{
+	SOCKET udpSocket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (udpSocket == INVALID_SOCKET)
+    {
+		// error
+		return;
+	}
+
+    sockaddr_in serverAddr;
+    serverAddr.sin_family = AF_INET;
+    serverAddr.sin_addr.s_addr = INADDR_ANY;
+    serverAddr.sin_port = htons(port);
+
+    if (bind(udpSocket, (sockaddr*)&serverAddr, sizeof(serverAddr)) == SOCKET_ERROR)
+    {
+        // error
+        closesocket(udpSocket);
+        return;
+    }
+
+    ThreadParams params;
+    params.socket = udpSocket;
+    params.callback = callback;
+    params.clientevent = clientevent;
+
+    UnityShowMessage("Delay measurement started on port %d", port);
+
+    g_delay_thread = CreateThread(NULL, 0, udpListenerThread, &params, 0, NULL);
+}
+
+
+//-----------------------------------------------------------------------------
 // Functions
 //-----------------------------------------------------------------------------
 
@@ -310,8 +403,6 @@ int PV_Stream(SOCKET clientsocket, HANDLE clientevent, MediaFrameReader const& r
     if (!ok) {
 		return WSAGetLastError();
 	}
-
-    // user.clientsocket = clientsocket;
  
     // initialize the generic UDP socket
     g_UDP_socket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
@@ -331,6 +422,7 @@ int PV_Stream(SOCKET clientsocket, HANDLE clientevent, MediaFrameReader const& r
     user.udp_address.sin_port = htons(stream_port);
     user.udp_address.sin_addr = client_addr.sin_addr;
 
+    user.clientsocket = clientsocket; // set it but won't use it
     user.clientevent  = clientevent;
     user.format       = &format;
 
@@ -344,16 +436,23 @@ int PV_Stream(SOCKET clientsocket, HANDLE clientevent, MediaFrameReader const& r
     g_divisor = format.divisor;    
     memset(&g_pvp_sh, 0, sizeof(g_pvp_sh));
 
+    runUdpListener(stream_port, onDelayDataReceived, clientevent);
+
     ReleaseSRWLockExclusive(&g_lock);
     reader.StartAsync().get();
     WaitForSingleObject(clientevent, INFINITE); 
     reader.StopAsync().get();
     AcquireSRWLockExclusive(&g_lock);
+
+    closesocket(g_UDP_socket);
+    g_UDP_socket = INVALID_SOCKET;
     
     g_pSinkWriter->Flush(g_dwVideoIndex);
     g_pSinkWriter->Release();
     pSink->Shutdown();
     pSink->Release();
+
+    return 0;
 }
 
 // OK
@@ -433,6 +532,8 @@ static int PV_Stream(SOCKET clientsocket)
     CloseHandle(clientevent);
 
     if (mode & 8) { PersonalVideo_Close(); }
+
+    return 0;
 }
 
 // OK

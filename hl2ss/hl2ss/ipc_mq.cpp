@@ -49,29 +49,29 @@ static DWORD WINAPI MQ_EntryPoint_Receive(void *param)
 
 	do
 	{
-	ok = recv_u32(clientsocket, msg.command);
-	if (!ok) { break; }
-	ok = recv_u32(clientsocket, msg.size);
-	if (!ok) { break; }
-	if (msg.size > 0)
-	{
-		msg.data = malloc(msg.size);
-		ok = recv(clientsocket, (char*)msg.data, msg.size);
-		if (!ok)
+		ok = recv_u32(clientsocket, msg.command);
+		if (!ok) { break; }
+		ok = recv_u32(clientsocket, msg.size);
+		if (!ok) { break; }
+		if (msg.size > 0)
 		{
-			free(msg.data);
-			break;
+			msg.data = malloc(msg.size);
+			ok = recv(clientsocket, (char*)msg.data, msg.size);
+			if (!ok)
+			{
+				free(msg.data);
+				break;
+			}
 		}
-	}
-	else
-	{
-		msg.data = NULL;
-	}
+		else
+		{
+			msg.data = NULL;
+		}
 
-	{
-	CriticalSection cs(&g_lock_si);
-	g_queue_si.push(msg);
-	}
+		{
+			CriticalSection cs(&g_lock_si);
+			g_queue_si.push(msg);
+		}
 	}
 	while (WaitForSingleObject(g_event_error, 0) == WAIT_TIMEOUT);
 
