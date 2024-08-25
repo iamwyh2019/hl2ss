@@ -118,7 +118,7 @@ int64_t GetFrameUTCTimestamp(int64_t timestamp)
 //-----------------------------------------------------------------------------
 // Delay measurement-related definitions
 //-----------------------------------------------------------------------------
-static HANDLE g_delay_thread = NULL;
+static HANDLE g_delay_thread;
 
 typedef void (*DataReceivedCallback)(const char* data, int length, sockaddr_in* clientAddr);
 
@@ -133,7 +133,6 @@ struct ThreadParams
 {
 	SOCKET socket;
 	DataReceivedCallback callback;
-    HANDLE clientevent;
 };
 
 static DWORD WINAPI udpListenerThread(LPVOID lpParam)
@@ -141,7 +140,6 @@ static DWORD WINAPI udpListenerThread(LPVOID lpParam)
 	ThreadParams* params = (ThreadParams*)lpParam;
 	SOCKET socket = params->socket;
 	DataReceivedCallback callback = params->callback;
-    HANDLE clientevent = params->clientevent;
 
 	sockaddr_in clientAddr;
 	int clientAddrSize = sizeof(clientAddr);
@@ -151,37 +149,53 @@ static DWORD WINAPI udpListenerThread(LPVOID lpParam)
     do
     {
 		bytesRead = recvfrom(socket, buffer, sizeof(buffer), 0, (sockaddr*)&clientAddr, &clientAddrSize);
+
         if (bytesRead == SOCKET_ERROR)
         {
 			int error = WSAGetLastError();
-            if (error == WSAECONNRESET)
+            UnityShowMessage("bytesRead: %d, error: %d", bytesRead, error);
+            if (error == WSAEWOULDBLOCK)
             {
-				// client disconnected
-				break;
+				// no data available
+                UnityShowMessage("Timeout");
+				continue;
 			}
             else
             {
-				// error
+				 //error
 				break;
 			}
 		}
 
 		callback(buffer, bytesRead, &clientAddr);
+
+        // For debugging: just say Hello every one second
+        /*Sleep(1000);
+        UnityShowMessage("Hello from UDP listener thread");*/
 	}
-    while (WaitForSingleObject(clientevent, 0) == WAIT_TIMEOUT);
+    while (WaitForSingleObject(g_event_quit, 0) == WAIT_TIMEOUT);
 
     // cleanup
     closesocket(socket);
+    delete params;
 
     return 0;
 }
 
-static void runUdpListener(uint16_t port, DataReceivedCallback callback, HANDLE clientevent)
+static void runUdpListener(uint16_t port, DataReceivedCallback callback)
 {
 	SOCKET udpSocket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     if (udpSocket == INVALID_SOCKET)
     {
 		// error
+		return;
+	}
+
+    int timeout = 5000; // 5 seconds
+    if (setsockopt(udpSocket, SOL_SOCKET, SO_RCVTIMEO, (const char*)&timeout, sizeof(timeout)) == SOCKET_ERROR)
+    {
+		// error
+		closesocket(udpSocket);
 		return;
 	}
 
@@ -197,14 +211,11 @@ static void runUdpListener(uint16_t port, DataReceivedCallback callback, HANDLE 
         return;
     }
 
-    ThreadParams params;
-    params.socket = udpSocket;
-    params.callback = callback;
-    params.clientevent = clientevent;
+    ThreadParams *params = new ThreadParams();
+    params->socket = udpSocket;
+    params->callback = callback;
 
-    UnityShowMessage("Delay measurement started on port %d", port);
-
-    g_delay_thread = CreateThread(NULL, 0, udpListenerThread, &params, 0, NULL);
+    g_delay_thread = CreateThread(NULL, 0, udpListenerThread, params, 0, NULL);
 }
 
 
@@ -360,6 +371,7 @@ void PV_SendSample(IMFSample* pSample, void* param)
     }
     
     // bool ok = send_multiple(user->clientsocket, wsaBuf, sizeof(wsaBuf) / sizeof(WSABUF), g_frameSentCallBack);
+
     bool ok = send_multiple_udp(g_UDP_socket, wsaBuf, sizeof(wsaBuf) / sizeof(WSABUF), &user->udp_address, g_frameSentCallBack);
     if (!ok) {
         SetEvent(user->clientevent);
@@ -436,16 +448,13 @@ int PV_Stream(SOCKET clientsocket, HANDLE clientevent, MediaFrameReader const& r
     g_divisor = format.divisor;    
     memset(&g_pvp_sh, 0, sizeof(g_pvp_sh));
 
-    runUdpListener(stream_port, onDelayDataReceived, clientevent);
+    runUdpListener(stream_port, onDelayDataReceived);
 
     ReleaseSRWLockExclusive(&g_lock);
     reader.StartAsync().get();
     WaitForSingleObject(clientevent, INFINITE); 
     reader.StopAsync().get();
     AcquireSRWLockExclusive(&g_lock);
-
-    closesocket(g_UDP_socket);
-    g_UDP_socket = INVALID_SOCKET;
     
     g_pSinkWriter->Flush(g_dwVideoIndex);
     g_pSinkWriter->Release();
@@ -519,6 +528,8 @@ static int PV_Stream(SOCKET clientsocket)
     // videoFrameReader.AcquisitionMode(MediaFrameReaderAcquisitionMode::Buffered);
     videoFrameReader.AcquisitionMode(MediaFrameReaderAcquisitionMode::Realtime);
 
+    UnityShowMessage("mode: %d", mode);
+
     switch (mode & 3)
     {
         case 0: PV_Stream<false>(clientsocket, clientevent, videoFrameReader, format); break;
@@ -531,7 +542,10 @@ static int PV_Stream(SOCKET clientsocket)
 
     CloseHandle(clientevent);
 
-    if (mode & 8) { PersonalVideo_Close(); }
+    if (mode & 8) {
+        UnityShowMessage("Closing PersonalVideo");
+        PersonalVideo_Close();
+    }
 
     return 0;
 }
@@ -547,22 +561,16 @@ static DWORD WINAPI PV_EntryPoint(void *param)
 
     listensocket = CreateSocket(PORT_NAME_PV);
 
-    ShowMessage("PV: Listening at port %s", PORT_NAME_PV);
-
     AcquireSRWLockExclusive(&g_lock);
 
     base_priority = GetThreadPriority(GetCurrentThread());
 
     do
     {
-        ShowMessage("PV: Waiting for client");
-
         clientsocket = accept(listensocket, NULL, NULL); // block
         if (clientsocket == INVALID_SOCKET) {
             break;
         }
-
-        ShowMessage("PV: Client connected");
 
         SetThreadPriority(GetCurrentThread(), ExtendedExecution_GetInterfacePriority(PORT_NUMBER_PV - PORT_NUMBER_BASE));
 
@@ -571,14 +579,10 @@ static DWORD WINAPI PV_EntryPoint(void *param)
         SetThreadPriority(GetCurrentThread(), base_priority);
 
         closesocket(clientsocket);
-
-        ShowMessage("PV: Client disconnected");
     } 
     while (WaitForSingleObject(g_event_quit, 0) == WAIT_TIMEOUT);
 
     closesocket(listensocket);
-
-    ShowMessage("PV: Closed");
 
     return 0;
 }
