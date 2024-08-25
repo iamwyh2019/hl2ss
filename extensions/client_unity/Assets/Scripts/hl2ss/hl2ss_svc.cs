@@ -1,12 +1,10 @@
 
 using System;
-using System.Text;
-using System.Collections.Generic;
 using System.Runtime.InteropServices;
 
 public static partial class hl2ss
 {
-    public static class svc
+    public class svc
     {
         //-----------------------------------------------------------------------------
         // Handle
@@ -47,9 +45,9 @@ public static partial class hl2ss
 
         public interface buffer
         {
-            public ulong size { get; }
+            public ulong length { get; }
 
-            public IntPtr data { get; }
+            public IntPtr address { get; }
         }
 
         //-----------------------------------------------------------------------------
@@ -173,28 +171,33 @@ public static partial class hl2ss
 
         public class calibration : handle, buffer
         {
+            protected IntPtr data;
+            protected ulong size;
+
             public calibration(string host, ushort port, IntPtr configuration) : base(hl2ss.ulm.download_calibration(host, port, configuration, out IntPtr p))
             {
                 size = 1;
-                data = p;
+                data = p;                
             }
 
-            public IntPtr data { get; private set; }
-
-            public ulong size { get; private set; }
+            public IntPtr address { get { return data; } }
+            public ulong length { get { return size; } }
         }
 
         public class device_list : handle, buffer
         {
+            protected IntPtr data;
+            protected ulong size;
+
             public device_list(string host, ushort port) : base(hl2ss.ulm.download_device_list(host, port, out ulong s, out IntPtr p))
             {
                 size = s;
                 data = p;
             }
 
-            public IntPtr data { get; private set; }
-
-            public ulong size { get; private set; }
+            public IntPtr address { get { return data; } }
+            
+            public ulong length { get { return size; } }
         }
 
         //-----------------------------------------------------------------------------
@@ -226,11 +229,11 @@ public static partial class hl2ss
                 check_result(hl2ss.ulm.rc_set_hs_marker_state(m_handle, state));
             }
 
-            public bool get_pv_subsystem_status()
+            public uint get_pv_subsystem_status()
             {
                 uint status;
                 check_result(hl2ss.ulm.rc_get_pv_subsystem_status(m_handle, out status));
-                return status != 0;
+                return status;
             }
 
             public void wait_for_pv_subsystem(bool status)
@@ -330,15 +333,16 @@ public static partial class hl2ss
 
         public class sm_surface_info_collection : handle, buffer
         {
+            protected IntPtr data;
+            protected ulong size;
+
             public sm_surface_info_collection(IntPtr ipc) : base(hl2ss.ulm.sm_get_observed_surfaces(ipc, out ulong s, out IntPtr p))
             {
-                size = s;
-                data = p;                
             }
 
-            public IntPtr data { get; private set; }
+            public IntPtr address { get { return data; } }
 
-            public ulong size { get; private set; }
+            public ulong length { get { return size; } }
         }
 
         public class sm_mesh_collection : handle
@@ -475,15 +479,18 @@ public static partial class hl2ss
 
         public class vi_result : handle, buffer
         {
+            protected IntPtr data;
+            protected ulong size;
+
             public vi_result(IntPtr ipc) : base(hl2ss.ulm.vi_pop(ipc, out ulong s, out IntPtr p))
             {
                 size = s;
                 data = p;
             }
 
-            public IntPtr data { get; private set; }
+            public IntPtr address { get { return data; } }
 
-            public ulong size { get; private set; }
+            public ulong length { get { return size; } }
         }
 
         public class ipc_vi : handle
@@ -497,17 +504,10 @@ public static partial class hl2ss
                 check_result(hl2ss.ulm.vi_create_recognizer(m_handle));
             }
 
-            public bool register_commands(bool clear, string[] commands)
+            public bool register_commands(bool clear, string utf8_array)
             {
-                List<byte> data = new List<byte>();
-                foreach (var s in commands)
-                {
-                    data.AddRange(Encoding.UTF8.GetBytes(s));
-                    data.Add(0);
-                }
-                data.Add(0);
                 uint status;
-                check_result(hl2ss.ulm.vi_register_commands(m_handle, Convert.ToByte(clear), data.ToArray(), out status));
+                check_result(hl2ss.ulm.vi_register_commands(m_handle, Convert.ToByte(clear), utf8_array, out status));
                 return status != 0;
             }
 
@@ -603,9 +603,9 @@ public static partial class hl2ss
             handle.check_result(hl2ss.ulm.initialize());
         }
 
-        public static void create_configuration(out hl2ss.ulm.configuration_rm_vlc c)
+        public static hl2ss.ulm.configuration_rm_vlc create_configuration_rm_vlc()
         {
-            c = new hl2ss.ulm.configuration_rm_vlc();
+            hl2ss.ulm.configuration_rm_vlc c = new hl2ss.ulm.configuration_rm_vlc();
 
             c.chunk = hl2ss.chunk_size.RM_VLC;
             c.mode = hl2ss.stream_mode.MODE_1;
@@ -615,11 +615,13 @@ public static partial class hl2ss
             c.bitrate = 0;
             c.options_data = IntPtr.Zero;
             c.options_size = -1;
+
+            return c;
         }
 
-        public static void create_configuration(out hl2ss.ulm.configuration_rm_depth_ahat c)
+        public static hl2ss.ulm.configuration_rm_depth_ahat create_configuration_rm_depth_ahat()
         {
-            c = new hl2ss.ulm.configuration_rm_depth_ahat();
+            hl2ss.ulm.configuration_rm_depth_ahat c = new hl2ss.ulm.configuration_rm_depth_ahat();
 
             c.chunk = hl2ss.chunk_size.RM_DEPTH_AHAT;
             c.mode = hl2ss.stream_mode.MODE_1;
@@ -630,29 +632,35 @@ public static partial class hl2ss
             c.bitrate = 0;
             c.options_data = IntPtr.Zero;
             c.options_size = -1;
+
+            return c;
         }
 
-        public static void create_configuration(out hl2ss.ulm.configuration_rm_depth_longthrow c)
+        public static hl2ss.ulm.configuration_rm_depth_longthrow create_configuration_rm_depth_longthrow()
         {
-            c = new hl2ss.ulm.configuration_rm_depth_longthrow();
+            hl2ss.ulm.configuration_rm_depth_longthrow c = new hl2ss.ulm.configuration_rm_depth_longthrow();
 
             c.chunk = hl2ss.chunk_size.RM_DEPTH_LONGTHROW;
             c.mode = hl2ss.stream_mode.MODE_1;
             c.divisor = 1;
             c.png_filter = hl2ss.png_filter_mode.PAETH;
+
+            return c;
         }
 
-        public static void create_configuration(out hl2ss.ulm.configuration_rm_imu c)
+        public static hl2ss.ulm.configuration_rm_imu create_configuration_rm_imu()
         {
-            c = new hl2ss.ulm.configuration_rm_imu();
+            hl2ss.ulm.configuration_rm_imu c = new hl2ss.ulm.configuration_rm_imu();
 
             c.chunk = hl2ss.chunk_size.RM_IMU;
             c.mode = hl2ss.stream_mode.MODE_1;
+
+            return c;
         }
 
-        public static void create_configuration(out hl2ss.ulm.configuration_pv c)
+        public static hl2ss.ulm.configuration_pv create_configuration_pv()
         {
-            c = new hl2ss.ulm.configuration_pv();
+            hl2ss.ulm.configuration_pv c = new hl2ss.ulm.configuration_pv();
 
             c.width = 1920;
             c.height = 1080;
@@ -666,35 +674,43 @@ public static partial class hl2ss
             c.options_data = IntPtr.Zero;
             c.options_size = -1;
             c.decoded_format = hl2ss.pv_decoded_format.BGR;
+
+            return c;
         }
 
-        public static void create_configuration(out hl2ss.ulm.configuration_microphone c)
+        public static hl2ss.ulm.configuration_microphone create_configuration_microphone()
         {
-            c = new hl2ss.ulm.configuration_microphone();
+            hl2ss.ulm.configuration_microphone c = new hl2ss.ulm.configuration_microphone();
 
             c.chunk = hl2ss.chunk_size.MICROPHONE;
             c.profile = hl2ss.audio_profile.AAC_24000;
             c.level = hl2ss.aac_level.L2;
+
+            return c;
         }
 
-        public static void create_configuration(out hl2ss.ulm.configuration_si c)
+        public static hl2ss.ulm.configuration_si create_configuration_si()
         {
-            c = new hl2ss.ulm.configuration_si();
+            hl2ss.ulm.configuration_si c = new hl2ss.ulm.configuration_si();
 
             c.chunk = hl2ss.chunk_size.SPATIAL_INPUT;
+
+            return c;
         }
 
-        public static void create_configuration(out hl2ss.ulm.configuration_eet c)
+        public static hl2ss.ulm.configuration_eet create_configuration_eet()
         {
-            c = new hl2ss.ulm.configuration_eet();
+            hl2ss.ulm.configuration_eet c = new hl2ss.ulm.configuration_eet();
 
             c.chunk = hl2ss.chunk_size.EXTENDED_EYE_TRACKER;
             c.framerate = hl2ss.eet_framerate.FPS_30;
+
+            return c;
         }
 
-        public static void create_configuration(out hl2ss.ulm.configuration_extended_audio c)
+        public static hl2ss.ulm.configuration_extended_audio create_configuration_extended_audio()
         {
-            c = new hl2ss.ulm.configuration_extended_audio();
+            hl2ss.ulm.configuration_extended_audio c = new hl2ss.ulm.configuration_extended_audio();
 
             c.chunk = hl2ss.chunk_size.EXTENDED_AUDIO;
             c.mixer_mode = hl2ss.mixer_mode.BOTH;
@@ -702,24 +718,8 @@ public static partial class hl2ss
             c.microphone_gain = 1.0f;
             c.profile = hl2ss.audio_profile.AAC_24000;
             c.level = hl2ss.aac_level.L2;
-        }
 
-        public static void create_configuration(out hl2ss.ulm.configuration_pv_subsystem c)
-        {
-            c = new hl2ss.ulm.configuration_pv_subsystem();
-
-            c.enable_mrc = 0;
-            c.hologram_composition = 1;
-            c.recording_indicator = 0;
-            c.video_stabilization = 0;
-            c.blank_protected = 0;
-            c.show_mesh = 0;
-            c.shared = 0;
-            c.global_opacity = 0.9f;
-            c.output_width = 0.0f;
-            c.output_height = 0.0f;
-            c.video_stabilization_length = 0;
-            c.hologram_perspective = hl2ss.hologram_perspective.PV;
+            return c;
         }
 
         public static source open_stream<T>(string host, ushort port, ulong buffer_size, T configuration)
@@ -758,9 +758,9 @@ public static partial class hl2ss
             ipc = new ipc_gmq(host, port);
         }
 
-        public static void start_subsystem_pv(string host, ushort port, hl2ss.ulm.configuration_pv_subsystem c)
+        public static void start_subsystem_pv(string host, ushort port, bool enable_mrc = false, bool hologram_composition = true, bool recording_indicator = false, bool video_stabilization = false, bool blank_protected = false, bool show_mesh = false, bool shared = false, float global_opacity = 0.9f, float output_width = 0.0f, float output_height = 0.0f, uint video_stabilization_length = 0, uint hologram_perspective = hl2ss.hologram_perspective.PV)
         {
-            handle.check_result(hl2ss.ulm.start_subsystem_pv(host, port, c));
+            handle.check_result(hl2ss.ulm.start_subsystem_pv(host, port, Convert.ToByte(enable_mrc), Convert.ToByte(hologram_composition), Convert.ToByte(recording_indicator), Convert.ToByte(video_stabilization), Convert.ToByte(blank_protected), Convert.ToByte(show_mesh), Convert.ToByte(shared), global_opacity, output_width, output_height, video_stabilization_length, hologram_perspective));
         }
 
         public static void stop_subsystem_pv(string host, ushort port)
