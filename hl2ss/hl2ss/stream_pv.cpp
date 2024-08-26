@@ -120,13 +120,42 @@ int64_t GetFrameUTCTimestamp(int64_t timestamp)
 //-----------------------------------------------------------------------------
 static HANDLE g_delay_thread;
 
-typedef void (*DataReceivedCallback)(const char* data, int length, sockaddr_in* clientAddr);
+DelayCallback g_delay_callback = nullptr;
+
+void PV_SetDelayCallback(DelayCallback callback)
+{
+	g_delay_callback = callback;
+}
 
 void onDelayDataReceived(const char* data, int length, sockaddr_in* clientAddr)
 {
-	// data is a whole frame
-    // TODO
-    UnityShowMessage("Received data from %s:%d with length %d", inet_ntoa(clientAddr->sin_addr), ntohs(clientAddr->sin_port), length);
+	// if too long, discard it
+    if (length > 4096)
+    {
+		return;
+	}
+
+    // get the timestamp from the first 8 bytes
+    int64_t timestamp = *(int64_t*)data;
+    // convert to milliseconds
+    //timestamp /= 10000;
+
+    // get the current time
+    int64_t current_time = GetTickCount64();
+
+    // calculate the delay
+    int64_t delay = current_time - timestamp;
+    // round trip delay, so divide by 2
+    delay /= 2;
+
+    if (g_delay_callback != nullptr)
+    {
+		g_delay_callback(delay);
+	}
+    else
+    {
+        UnityShowMessage("Delay: %lld ms", delay);
+    }
 }
 
 struct ThreadParams
@@ -143,7 +172,7 @@ static DWORD WINAPI udpListenerThread(LPVOID lpParam)
 
 	sockaddr_in clientAddr;
 	int clientAddrSize = sizeof(clientAddr);
-	char buffer[8192];
+	char buffer[65535];
 	int bytesRead;
 
     do
@@ -153,16 +182,14 @@ static DWORD WINAPI udpListenerThread(LPVOID lpParam)
         if (bytesRead == SOCKET_ERROR)
         {
 			int error = WSAGetLastError();
-            UnityShowMessage("bytesRead: %d, error: %d", bytesRead, error);
-            if (error == WSAEWOULDBLOCK)
+            if (error == WSAETIMEDOUT)
             {
 				// no data available
-                UnityShowMessage("Timeout");
 				continue;
 			}
             else
             {
-				 //error
+				UnityShowMessage("Error receiving delay data: %d", error);
 				break;
 			}
 		}
@@ -267,10 +294,9 @@ void PV_OnVideoFrameArrived(MediaFrameReader const& sender, MediaFrameArrivedEve
                 auto const& intrinsics = frame.VideoMediaFrame().CameraIntrinsics();
                 auto const& metadata   = frame.Properties().Lookup(MFSampleExtension_CaptureMetadata).as<IMapView<winrt::guid, winrt::Windows::Foundation::IInspectable>>();
 
-                pj.timestamp = timestamp;
-				// timestamp is the relative time from the system boot time in 100-nanosecond intervals
-				// convert to Unix time in milliseconds
-				// pj.timestamp = GetFrameUTCTimestamp(timestamp);
+                //pj.timestamp = timestamp;
+				// record current time tick to measure delay
+                pj.timestamp = GetTickCount64();
 
                 pj.f = intrinsics.FocalLength();
                 pj.c = intrinsics.PrincipalPoint();
@@ -527,8 +553,6 @@ static int PV_Stream(SOCKET clientsocket)
     auto const& videoFrameReader = PersonalVideo_CreateFrameReader();
     // videoFrameReader.AcquisitionMode(MediaFrameReaderAcquisitionMode::Buffered);
     videoFrameReader.AcquisitionMode(MediaFrameReaderAcquisitionMode::Realtime);
-
-    UnityShowMessage("mode: %d", mode);
 
     switch (mode & 3)
     {

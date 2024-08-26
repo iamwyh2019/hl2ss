@@ -118,6 +118,7 @@ extern "C" {
     typedef void(*FrameCallback)(const MediaFrameReference*);
     typedef void(*FrameSentCallback)(const DWORD);
     typedef void (*UnityDebugCallback)(const char*);
+    typedef void (*DelayCallback)(const int64_t);
 }
 
 HL2SS_PLUGIN_EXPORT
@@ -138,4 +139,10 @@ HL2SS_PLUGIN_EXPORT
 void SetUnityDebug(UnityDebugCallback callback)
 {
     SetUnityDebugCallback(callback);
+}
+
+HL2SS_PLUGIN_EXPORT
+void SetDelayCallback(DelayCallback callback)
+{
+	PV_SetDelayCallback(callback);
 }
