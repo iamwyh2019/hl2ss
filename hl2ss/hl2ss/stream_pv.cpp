@@ -147,7 +147,7 @@ void onDelayDataReceived(const char* data, int length, sockaddr_in* clientAddr)
     //timestamp /= 10000;
 
     // get the time stamp from the second 8 bytes
-    uint64_t timestamp = *(uint64_t*)(data + 8);
+    int64_t timestamp = *(int64_t*)(data + 8);
 
     // get the current time
     uint64_t current_time = GetTickCount64();
@@ -161,10 +161,6 @@ void onDelayDataReceived(const char* data, int length, sockaddr_in* clientAddr)
     {
         g_network_delay_callback(delay);
 	}
-    else
-    {
-        UnityShowMessage("Delay: %lld ms", delay);
-    }
 }
 
 struct ThreadParams
@@ -411,12 +407,13 @@ void PV_SendSample(IMFSample* pSample, void* param)
     DWORD cbDataEx = cbData + metadata;
 
     // get the delay
-    auto currentTick = GetTickCount64();
-    int64_t delay = currentTick - g_pvp_sh.timestamp + g_pvp_sh._reserved;
+    int64_t currentTick = GetTickCount64(); // implicit conversion to int64_t
+    int64_t delay = currentTick - g_pvp_sh.timestamp; // +g_pvp_sh._reserved;
     if (g_system_delay_callback != nullptr)
     {
 		g_system_delay_callback(delay);
 	}
+    currentTick = GetTickCount64();
 
     pack_buffer(wsaBuf, 0, &g_pvp_sh.timestamp, sizeof(g_pvp_sh.timestamp));
     pack_buffer(wsaBuf, 1, &currentTick, sizeof(currentTick));

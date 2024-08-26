@@ -197,10 +197,10 @@ HRESULT CustomStreamSink::PlaceMarker(MFSTREAMSINK_MARKER_TYPE eMarkerType, PROP
 // OK
 HRESULT CustomStreamSink::ProcessSample(IMFSample* pSample)
 {
-{
-    CriticalSection cs(&m_critSec);
-    m_pHook->ProcessSample(pSample);
-}
+    {
+        CriticalSection cs(&m_critSec);
+        m_pHook->ProcessSample(pSample);
+    }
     return QueueEvent(MEStreamSinkRequestSample, GUID_NULL, S_OK, NULL);
 }
 
