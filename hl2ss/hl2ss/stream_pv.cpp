@@ -55,7 +55,7 @@ struct PV_Projection
     uint32_t white_balance;
     float2   iso_gains;
     float3   white_balance_gains;
-    uint32_t _reserved;
+    uint64_t _reserved;
     uint64_t timestamp;
     float4x4 pose;
 };
@@ -142,12 +142,15 @@ void onDelayDataReceived(const char* data, int length, sockaddr_in* clientAddr)
 	}
 
     // get the timestamp from the first 8 bytes
-    int64_t timestamp = *(int64_t*)data;
+    //int64_t timestamp = *(int64_t*)data;
     // convert to milliseconds
     //timestamp /= 10000;
 
+    // get the time stamp from the second 8 bytes
+    uint64_t timestamp = *(uint64_t*)(data + 8);
+
     // get the current time
-    int64_t current_time = GetTickCount64();
+    uint64_t current_time = GetTickCount64();
 
     // calculate the delay
     int64_t delay = current_time - timestamp;
@@ -305,11 +308,6 @@ void PV_OnVideoFrameArrived(MediaFrameReader const& sender, MediaFrameArrivedEve
                 // convert to milliseconds
                 delay /= 10000;
 
-                if (g_system_delay_callback != nullptr)
-                {
-					g_system_delay_callback(delay);
-				}
-
                 pSample->AddBuffer(pBuffer);
                 pSample->SetSampleDuration(frame.Duration().count());
                 pSample->SetSampleTime(timestamp);
@@ -318,6 +316,9 @@ void PV_OnVideoFrameArrived(MediaFrameReader const& sender, MediaFrameArrivedEve
                 auto const& metadata   = frame.Properties().Lookup(MFSampleExtension_CaptureMetadata).as<IMapView<winrt::guid, winrt::Windows::Foundation::IInspectable>>();
 
                 //pj.timestamp = timestamp;
+ 
+                // use the reserved field to store the delay
+                pj._reserved = delay;
 				// record current time tick to measure delay
                 pj.timestamp = GetTickCount64();
 
@@ -393,7 +394,7 @@ void PV_SendSample(IMFSample* pSample, void* param)
     LONGLONG sampletime;
     BYTE* pBytes;
     DWORD cbData;
-    WSABUF wsaBuf[ENABLE_LOCATION ? 5 : 4];
+    WSABUF wsaBuf[ENABLE_LOCATION ? 6 : 5];
 
     HookCallbackSocket* user = (HookCallbackSocket*)param;
     H26xFormat* format = (H26xFormat*)user->format;
@@ -409,14 +410,23 @@ void PV_SendSample(IMFSample* pSample, void* param)
     int const metadata = sizeof(g_pvp_sh) - sizeof(g_pvp_sh.timestamp) - sizeof(g_pvp_sh.pose);
     DWORD cbDataEx = cbData + metadata;
 
+    // get the delay
+    auto currentTick = GetTickCount64();
+    int64_t delay = currentTick - g_pvp_sh.timestamp + g_pvp_sh._reserved;
+    if (g_system_delay_callback != nullptr)
+    {
+		g_system_delay_callback(delay);
+	}
+
     pack_buffer(wsaBuf, 0, &g_pvp_sh.timestamp, sizeof(g_pvp_sh.timestamp));
-    pack_buffer(wsaBuf, 1, &cbDataEx, sizeof(cbDataEx));
-    pack_buffer(wsaBuf, 2, pBytes, cbData);
-    pack_buffer(wsaBuf, 3, &g_pvp_sh, metadata);
+    pack_buffer(wsaBuf, 1, &currentTick, sizeof(currentTick));
+    pack_buffer(wsaBuf, 2, &cbDataEx, sizeof(cbDataEx));
+    pack_buffer(wsaBuf, 3, pBytes, cbData);
+    pack_buffer(wsaBuf, 4, &g_pvp_sh, metadata);
 
     if constexpr(ENABLE_LOCATION)
     {
-        pack_buffer(wsaBuf, 4, &g_pvp_sh.pose, sizeof(g_pvp_sh.pose));
+        pack_buffer(wsaBuf, 5, &g_pvp_sh.pose, sizeof(g_pvp_sh.pose));
     }
     
     // bool ok = send_multiple(user->clientsocket, wsaBuf, sizeof(wsaBuf) / sizeof(WSABUF), g_frameSentCallBack);
