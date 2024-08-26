@@ -142,7 +142,13 @@ void SetUnityDebug(UnityDebugCallback callback)
 }
 
 HL2SS_PLUGIN_EXPORT
-void SetDelayCallback(DelayCallback callback)
+void SetNetworkDelayCallback(DelayCallback callback)
 {
-	PV_SetDelayCallback(callback);
+	PV_SetNetworkDelayCallback(callback);
+}
+
+HL2SS_PLUGIN_EXPORT
+void SetSystemDelayCallback(DelayCallback callback)
+{
+	PV_SetSystemDelayCallback(callback);
 }

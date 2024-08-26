@@ -120,11 +120,17 @@ int64_t GetFrameUTCTimestamp(int64_t timestamp)
 //-----------------------------------------------------------------------------
 static HANDLE g_delay_thread;
 
-DelayCallback g_delay_callback = nullptr;
+DelayCallback g_system_delay_callback = nullptr;
+DelayCallback g_network_delay_callback = nullptr;
 
-void PV_SetDelayCallback(DelayCallback callback)
+void PV_SetSystemDelayCallback(DelayCallback callback)
 {
-	g_delay_callback = callback;
+	g_system_delay_callback = callback;
+}
+
+void PV_SetNetworkDelayCallback(DelayCallback callback)
+{
+    g_network_delay_callback = callback;
 }
 
 void onDelayDataReceived(const char* data, int length, sockaddr_in* clientAddr)
@@ -148,9 +154,9 @@ void onDelayDataReceived(const char* data, int length, sockaddr_in* clientAddr)
     // round trip delay, so divide by 2
     delay /= 2;
 
-    if (g_delay_callback != nullptr)
+    if (g_network_delay_callback != nullptr)
     {
-		g_delay_callback(delay);
+        g_network_delay_callback(delay);
 	}
     else
     {
@@ -164,6 +170,8 @@ struct ThreadParams
 	DataReceivedCallback callback;
 };
 
+char g_delay_buffer[65535];
+
 static DWORD WINAPI udpListenerThread(LPVOID lpParam)
 {
 	ThreadParams* params = (ThreadParams*)lpParam;
@@ -172,12 +180,11 @@ static DWORD WINAPI udpListenerThread(LPVOID lpParam)
 
 	sockaddr_in clientAddr;
 	int clientAddrSize = sizeof(clientAddr);
-	char buffer[65535];
 	int bytesRead;
 
     do
     {
-		bytesRead = recvfrom(socket, buffer, sizeof(buffer), 0, (sockaddr*)&clientAddr, &clientAddrSize);
+		bytesRead = recvfrom(socket, g_delay_buffer, sizeof(g_delay_buffer), 0, (sockaddr*)&clientAddr, &clientAddrSize);
 
         if (bytesRead == SOCKET_ERROR)
         {
@@ -194,7 +201,7 @@ static DWORD WINAPI udpListenerThread(LPVOID lpParam)
 			}
 		}
 
-		callback(buffer, bytesRead, &clientAddr);
+		callback(g_delay_buffer, bytesRead, &clientAddr);
 
         // For debugging: just say Hello every one second
         /*Sleep(1000);
@@ -265,6 +272,12 @@ template<bool ENABLE_LOCATION>
 void PV_OnVideoFrameArrived(MediaFrameReader const& sender, MediaFrameArrivedEventArgs const& args)
 {
     (void)args;
+
+    // get the QPC timestamp
+    LARGE_INTEGER frequency, currentQPC;
+    QueryPerformanceFrequency(&frequency);
+    QueryPerformanceCounter(&currentQPC);
+    LONGLONG currentTimeIn100ns = currentQPC.QuadPart * 10000000 / frequency.QuadPart;
     
     IMFSample* pSample; // Release
     SoftwareBitmapBuffer* pBuffer; // Release
@@ -286,6 +299,16 @@ void PV_OnVideoFrameArrived(MediaFrameReader const& sender, MediaFrameArrivedEve
                 MFCreateSample(&pSample);
 
                 int64_t timestamp = frame.SystemRelativeTime().Value().count();
+
+                // get the delay between the start of this function and the actual frame timestamp
+                int64_t delay = currentTimeIn100ns - timestamp;
+                // convert to milliseconds
+                delay /= 10000;
+
+                if (g_system_delay_callback != nullptr)
+                {
+					g_system_delay_callback(delay);
+				}
 
                 pSample->AddBuffer(pBuffer);
                 pSample->SetSampleDuration(frame.Duration().count());

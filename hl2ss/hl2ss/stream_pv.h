@@ -14,4 +14,5 @@ void PV_Quit();
 void PV_Cleanup();
 void PV_SetCustomFrameCallback(FrameCallback callback);
 void PV_SetCustomFrameSentCallback(FrameSentCallback callback);
-void PV_SetDelayCallback(DelayCallback callback);
+void PV_SetNetworkDelayCallback(DelayCallback callback);
+void PV_SetSystemDelayCallback(DelayCallback callback);
