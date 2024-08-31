@@ -3,6 +3,7 @@
 
 #include <mfidl.h>
 #include "custom_sink_hook.h"
+#include "log.h"
 
 // OK
 class CustomStreamSink : public IMFStreamSink

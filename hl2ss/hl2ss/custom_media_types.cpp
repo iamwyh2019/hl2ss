@@ -317,10 +317,10 @@ HRESULT CreateTypeVideo(IMFMediaType** ppType, uint32_t width, uint32_t height, 
 {
     switch (profile)
     {
-    case H26xProfile::H264Profile_Base: return CreateTypeH264(ppType, width, height, fps_num, fps_den, eAVEncH264VProfile::eAVEncH264VProfile_Base,       level, bitrate);
-    case H26xProfile::H264Profile_Main: return CreateTypeH264(ppType, width, height, fps_num, fps_den, eAVEncH264VProfile::eAVEncH264VProfile_Main,       level, bitrate);
-    case H26xProfile::H264Profile_High: return CreateTypeH264(ppType, width, height, fps_num, fps_den, eAVEncH264VProfile::eAVEncH264VProfile_High,       level, bitrate);
-    case H26xProfile::H265Profile_Main: return CreateTypeHEVC(ppType, width, height, fps_num, fps_den, eAVEncH265VProfile::eAVEncH265VProfile_Main_420_8, level, bitrate);
+        case H26xProfile::H264Profile_Base: return CreateTypeH264(ppType, width, height, fps_num, fps_den, eAVEncH264VProfile::eAVEncH264VProfile_Base,       level, bitrate);
+        case H26xProfile::H264Profile_Main: return CreateTypeH264(ppType, width, height, fps_num, fps_den, eAVEncH264VProfile::eAVEncH264VProfile_Main,       level, bitrate);
+        case H26xProfile::H264Profile_High: return CreateTypeH264(ppType, width, height, fps_num, fps_den, eAVEncH264VProfile::eAVEncH264VProfile_High,       level, bitrate);
+        case H26xProfile::H265Profile_Main: return CreateTypeHEVC(ppType, width, height, fps_num, fps_den, eAVEncH265VProfile::eAVEncH265VProfile_Main_420_8, level, bitrate);
     }
 
     if (subtype == VideoSubtype::VideoSubtype_L8)   { return CreateTypeL8(  ppType, width, height, stride, fps_num, fps_den); }

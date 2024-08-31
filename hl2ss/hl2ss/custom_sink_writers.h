@@ -4,6 +4,8 @@
 #include "custom_media_sink.h"
 #include "custom_media_types.h"
 #include "custom_hook_callback.h"
+// for showing message
+#include "log.h"
 #include <mfreadwrite.h>
 #include <vector>
 

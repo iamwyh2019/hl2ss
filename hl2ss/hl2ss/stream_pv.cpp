@@ -444,7 +444,7 @@ void PV_SendSample(IMFSample* pSample, void* param)
 
 // OK
 template<bool ENABLE_LOCATION>
-int PV_Stream(SOCKET clientsocket, HANDLE clientevent, MediaFrameReader const& reader, H26xFormat& format)
+int PV_Stream(SOCKET clientsocket, HANDLE clientevent, MediaFrameReader const& reader, H26xFormat& format, uint8_t& mode)
 {
     CustomMediaSink* pSink; // Release
     std::vector<uint64_t> options;
@@ -508,7 +508,26 @@ int PV_Stream(SOCKET clientsocket, HANDLE clientevent, MediaFrameReader const& r
 
     ReleaseSRWLockExclusive(&g_lock);
     reader.StartAsync().get();
-    WaitForSingleObject(clientevent, INFINITE); 
+
+    // receive mode
+    do
+    {
+        ok = recv_u8(clientsocket, mode);
+        UnityShowMessage("Receive mode: %d", mode);
+        if (!ok) {
+			// if it's timeout, continue
+            if (WSAGetLastError() == WSAETIMEDOUT)
+            {
+				continue;
+			}
+            break;
+		}
+        if (mode & 8) {
+            break;
+        }
+    }
+    while (WaitForSingleObject(clientevent, 0) == WAIT_TIMEOUT);
+
     reader.StopAsync().get();
     AcquireSRWLockExclusive(&g_lock);
     
@@ -586,8 +605,8 @@ static int PV_Stream(SOCKET clientsocket)
 
     switch (mode & 3)
     {
-        case 0: PV_Stream<false>(clientsocket, clientevent, videoFrameReader, format); break;
-        case 1: PV_Stream<true>(clientsocket, clientevent, videoFrameReader, format); break;
+        case 0: PV_Stream<false>(clientsocket, clientevent, videoFrameReader, format, mode); break;
+        case 1: PV_Stream<true>(clientsocket, clientevent, videoFrameReader, format, mode); break;
         case 2: PV_Intrinsics(clientsocket, clientevent, videoFrameReader);         break;
     }
 
