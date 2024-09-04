@@ -201,10 +201,6 @@ static DWORD WINAPI udpListenerThread(LPVOID lpParam)
 		}
 
 		callback(g_delay_buffer, bytesRead, &clientAddr);
-
-        // For debugging: just say Hello every one second
-        /*Sleep(1000);
-        UnityShowMessage("Hello from UDP listener thread");*/
 	}
     while (WaitForSingleObject(g_event_quit, 0) == WAIT_TIMEOUT);
 
