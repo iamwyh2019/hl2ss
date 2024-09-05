@@ -16,6 +16,12 @@ struct MQ_MSG
 };
 
 //-----------------------------------------------------------------------------
+// Const Variables
+//-----------------------------------------------------------------------------
+static const uint32_t MQ_COMMAND_HEARTBEAT = 0;
+static const uint32_t MQ_COMMAND_GLOBAL_QUIT = 1;
+
+//-----------------------------------------------------------------------------
 // Global Variables
 //-----------------------------------------------------------------------------
 
@@ -54,7 +60,6 @@ static DWORD WINAPI MQ_UDP_EntryPoint_Receive(void* param)
 	}
 
 	uint16_t stream_port = *((uint16_t*)param);
-	bool ok;
 
 	DWORD error;
 
@@ -102,7 +107,7 @@ static DWORD WINAPI MQ_UDP_EntryPoint_Receive(void* param)
 
 		if (bytesRead == SOCKET_ERROR)
 		{
-			int error = WSAGetLastError();
+			error = WSAGetLastError();
 			if (error == WSAETIMEDOUT)
 			{
 				// no data available
@@ -172,10 +177,16 @@ static DWORD WINAPI MQ_EntryPoint_Receive(void *param)
 			msg.data = NULL;
 		}
 
-		if (msg.command == 0)
+		if (msg.command == MQ_COMMAND_HEARTBEAT)
 		{
 			// heartbeat
 			continue;
+		}
+		else if (msg.command == MQ_COMMAND_GLOBAL_QUIT)
+		{
+			// global quit
+			SetEvent(g_event_quit);
+			break;
 		}
 
 		{
@@ -278,7 +289,7 @@ void MQ_Restart()
 static void MQ_Procedure(SOCKET clientsocket)
 {
 	HANDLE threads[2];
-	MQ_MSG msg;
+	// MQ_MSG msg;
 
 	g_semaphore_so = CreateSemaphore(NULL, 0, LONG_MAX, NULL);
 
