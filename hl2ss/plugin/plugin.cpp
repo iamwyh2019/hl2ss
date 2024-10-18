@@ -115,7 +115,7 @@ int OverrideWorldCoordinateSystem(void* scs_ptr)
 }
 
 extern "C" {
-    typedef void(*FrameCallback)(const MediaFrameReference*);
+    typedef void(*FrameCallback)(const uint64_t, const float pose[16]);
     typedef void(*FrameSentCallback)(const DWORD);
     typedef void (*UnityDebugCallback)(const char*);
     typedef void (*DelayCallback)(const int64_t);

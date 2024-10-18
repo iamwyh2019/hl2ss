@@ -16,6 +16,12 @@ struct MQ_MSG
 };
 
 //-----------------------------------------------------------------------------
+// Const Variables
+//-----------------------------------------------------------------------------
+static const uint32_t MQ_COMMAND_HEARTBEAT = 0;
+static const uint32_t MQ_COMMAND_GLOBAL_QUIT = 1;
+
+//-----------------------------------------------------------------------------
 // Global Variables
 //-----------------------------------------------------------------------------
 
@@ -39,6 +45,109 @@ static std::queue<uint32_t> g_queue_co;
 //-----------------------------------------------------------------------------
 // Functions
 //-----------------------------------------------------------------------------
+
+char g_udp_buffer[65535];
+HANDLE g_udp_thread = NULL;
+HANDLE g_udp_event_quit = NULL;
+
+static DWORD WINAPI MQ_UDP_EntryPoint_Receive(void* param)
+{
+	g_udp_event_quit = CreateEvent(NULL, TRUE, FALSE, NULL);
+	if (g_udp_event_quit == NULL)
+	{
+		UnityShowMessage("MQ_UDP: Error creating event: %d", WSAGetLastError());
+		return WSAGetLastError();
+	}
+
+	uint16_t stream_port = *((uint16_t*)param);
+
+	DWORD error;
+
+	sockaddr_in serverAddr;
+	serverAddr.sin_family = AF_INET;
+	serverAddr.sin_addr.s_addr = INADDR_ANY;
+	serverAddr.sin_port = htons(stream_port);
+
+	UnityShowMessage("MQ_UDP: Listening at port %d", stream_port);
+
+	SOCKET udpSocket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+	if (udpSocket == INVALID_SOCKET)
+	{
+		// error
+		error = WSAGetLastError();
+		UnityShowMessage("MQ_UDP: Error creating socket: %d", error);
+		return error;
+	}
+
+	int timeout = 5000; // 5 seconds
+	if (setsockopt(udpSocket, SOL_SOCKET, SO_RCVTIMEO, (const char*)&timeout, sizeof(timeout)) == SOCKET_ERROR)
+	{
+		// error
+		closesocket(udpSocket);
+		error = WSAGetLastError();
+		UnityShowMessage("MQ_UDP: Error creating socket: %d", error);
+		return error;
+	}
+
+	if (bind(udpSocket, (sockaddr*)&serverAddr, sizeof(serverAddr)) == SOCKET_ERROR)
+	{
+		// error
+		closesocket(udpSocket);
+		error = WSAGetLastError();
+		UnityShowMessage("MQ_UDP: Error creating socket: %d", error);
+		return error;
+	}
+
+	MQ_MSG msg;
+	int serverAddrSize = sizeof(serverAddr);
+	int bytesRead;
+	do
+	{
+		bytesRead = recvfrom(udpSocket, g_udp_buffer, sizeof(g_udp_buffer), 0, (sockaddr*)&serverAddr, &serverAddrSize);
+
+		if (bytesRead == SOCKET_ERROR)
+		{
+			error = WSAGetLastError();
+			if (error == WSAETIMEDOUT)
+			{
+				// no data available
+				continue;
+			}
+			else
+			{
+				UnityShowMessage("MQ_UDP Error receiving: %d", error);
+				break;
+			}
+		}
+
+		msg.command = *(uint32_t*)g_udp_buffer;
+		msg.size = *(uint32_t*)(g_udp_buffer + sizeof(uint32_t));
+
+		if (msg.size > 0)
+		{
+			msg.data = malloc(msg.size);
+			if (msg.data == NULL)
+			{
+				UnityShowMessage("MQ_UDP Error allocating memory");
+				break;
+			}
+			memcpy(msg.data, g_udp_buffer + sizeof(uint32_t) + sizeof(uint32_t), msg.size);
+		}
+		else
+		{
+			msg.data = NULL;
+		}
+		{
+			CriticalSection cs(&g_lock_si);
+			g_queue_si.push(msg);
+		}
+	} while (WaitForSingleObject(g_udp_event_quit, 0) == WAIT_TIMEOUT);
+
+	SetEvent(g_udp_event_quit);
+	closesocket(udpSocket);
+
+	return 0;
+}
 
 // OK
 static DWORD WINAPI MQ_EntryPoint_Receive(void *param)
@@ -66,6 +175,18 @@ static DWORD WINAPI MQ_EntryPoint_Receive(void *param)
 		else
 		{
 			msg.data = NULL;
+		}
+
+		if (msg.command == MQ_COMMAND_HEARTBEAT)
+		{
+			// heartbeat
+			continue;
+		}
+		else if (msg.command == MQ_COMMAND_GLOBAL_QUIT)
+		{
+			// global quit
+			SetEvent(g_event_quit);
+			break;
 		}
 
 		{
@@ -145,9 +266,14 @@ static DWORD WINAPI MQ_EntryPoint_Send(void *param)
 // OK
 void MQ_SO_Push(uint32_t id)
 {
-	CriticalSection cs(&g_lock_so);
-	g_queue_so.push(id);
-	ReleaseSemaphore(g_semaphore_so, 1, NULL);
+	try {
+		CriticalSection cs(&g_lock_so);
+		g_queue_so.push(id);
+		ReleaseSemaphore(g_semaphore_so, 1, NULL);
+	}
+	catch (std::exception e) {
+		UnityShowMessage("MQ_SO_Push: %s", e.what());
+	}
 }
 
 // OK
@@ -163,19 +289,41 @@ void MQ_Restart()
 static void MQ_Procedure(SOCKET clientsocket)
 {
 	HANDLE threads[2];
-	MQ_MSG msg;
+	// MQ_MSG msg;
 
 	g_semaphore_so = CreateSemaphore(NULL, 0, LONG_MAX, NULL);
+
+	uint16_t stream_port;
+	bool ok;
+
+	if (g_udp_thread == NULL) {
+		ok = recv_u16(clientsocket, stream_port);
+		if (!ok) {
+			UnityShowMessage("MQ: Error receiving stream port (%d)", WSAGetLastError());
+		}
+		else {
+			g_udp_thread = CreateThread(NULL, 0, MQ_UDP_EntryPoint_Receive, &stream_port, 0, NULL);
+		}
+	}
 	
 	threads[0] = CreateThread(NULL, 0, MQ_EntryPoint_Receive, &clientsocket, 0, NULL);
-	threads[1] = CreateThread(NULL, 0, MQ_EntryPoint_Send,    &clientsocket, 0, NULL);
+	if (threads[0] == NULL) {
+		UnityShowMessage("MQ: Error creating thread (%d)", WSAGetLastError());
+	}
+	else {
+		WaitForSingleObject(threads[0], INFINITE);
+		CloseHandle(threads[0]);
+	}
 
-	WaitForMultipleObjects(sizeof(threads) / sizeof(HANDLE), threads, TRUE, INFINITE);
+	// Yuheng @ 9/5/2024: No need to send data back to client, so comment out the following code
+	//threads[1] = CreateThread(NULL, 0, MQ_EntryPoint_Send, &clientsocket, 0, NULL);
 
-	CloseHandle(threads[0]);
-	CloseHandle(threads[1]);
+	//WaitForMultipleObjects(sizeof(threads) / sizeof(HANDLE), threads, TRUE, INFINITE);
+	
 
-	msg.command = ~0UL;
+	//CloseHandle(threads[1]);
+
+	/*msg.command = ~0UL;
 	msg.size = 0;
 	msg.data = NULL;
 
@@ -186,7 +334,10 @@ static void MQ_Procedure(SOCKET clientsocket)
 
 	ShowMessage("MQ: Waiting for restart signal");
 	WaitForSingleObject(g_event_restart, INFINITE);
-	ShowMessage("MQ: Restart signal received");
+	ShowMessage("MQ: Restart signal received");*/
+
+	// Yuheng @ 9/5/2024: simply restart
+	MQ_Restart();
 }
 
 // OK
@@ -201,24 +352,34 @@ static DWORD WINAPI MQ_EntryPoint(void* param)
 
 	do
 	{
-		ShowMessage("MQ: Waiting for client");
-
+		UnityShowMessage("MQ: Waiting for client");
+		
 		clientsocket = accept(listensocket, NULL, NULL);
 		if (clientsocket == INVALID_SOCKET) { break; }
 
-		ShowMessage("MQ: Client connected");
+		UnityShowMessage("MQ: Client connected");
 
 		MQ_Procedure(clientsocket);
 
 		closesocket(clientsocket);
 
-		ShowMessage("MQ: Client disconnected");
+		UnityShowMessage("MQ: Client disconnected");
 	}
 	while (WaitForSingleObject(g_event_quit, 0) == WAIT_TIMEOUT);
 
+	UnityShowMessage("MQ: Closing");
+
+	// stop the UDP thread
+	if (g_udp_event_quit != NULL && g_udp_thread != NULL) {
+		SetEvent(g_udp_event_quit);
+		WaitForSingleObject(g_udp_thread, INFINITE);
+		CloseHandle(g_udp_thread);
+		CloseHandle(g_udp_event_quit);
+	}
+
 	closesocket(listensocket);
 
-	ShowMessage("MQ: Closed");
+	UnityShowMessage("MQ: Closed");
 
 	return 0;
 }

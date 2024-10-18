@@ -5,7 +5,7 @@
 #include "server.h"
 using namespace winrt::Windows::Media::Capture::Frames;
 
-typedef void(*FrameCallback)(const MediaFrameReference*);
+typedef void(*FrameCallback)(const uint64_t, const float pose[16]);
 typedef void (*DataReceivedCallback)(const char* data, int length, sockaddr_in* clientAddr);
 typedef void (*DelayCallback)(const int64_t);
 

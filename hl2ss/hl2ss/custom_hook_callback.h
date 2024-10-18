@@ -2,6 +2,7 @@
 #pragma once
 
 #include "custom_sink_hook.h"
+#include "log.h"
 
 typedef void(*HOOK_SINK_PROC)(IMFSample*, void*);
 

@@ -201,10 +201,6 @@ static DWORD WINAPI udpListenerThread(LPVOID lpParam)
 		}
 
 		callback(g_delay_buffer, bytesRead, &clientAddr);
-
-        // For debugging: just say Hello every one second
-        /*Sleep(1000);
-        UnityShowMessage("Hello from UDP listener thread");*/
 	}
     while (WaitForSingleObject(g_event_quit, 0) == WAIT_TIMEOUT);
 
@@ -289,10 +285,6 @@ void PV_OnVideoFrameArrived(MediaFrameReader const& sender, MediaFrameArrivedEve
         {
             if (g_counter == 0)
             {
-                if (g_frameCallBack != nullptr) {
-                    g_frameCallBack(&frame);
-                }
-
                 SoftwareBitmapBuffer::CreateInstance(&pBuffer, frame);
 
                 MFCreateSample(&pSample);
@@ -317,7 +309,6 @@ void PV_OnVideoFrameArrived(MediaFrameReader const& sender, MediaFrameArrivedEve
                 pj._reserved = delay;
 				// record current time tick to measure delay
                 pj.timestamp = GetTickCount64();
-
                 pj.f = intrinsics.FocalLength();
                 pj.c = intrinsics.PrincipalPoint();
 
@@ -334,6 +325,11 @@ void PV_OnVideoFrameArrived(MediaFrameReader const& sender, MediaFrameArrivedEve
                 {
                     pj.pose = Locator_GetTransformTo(frame.CoordinateSystem(), Locator_GetWorldCoordinateSystem(QPCTimestampToPerceptionTimestamp(timestamp)));
                 }
+
+                if (g_frameCallBack != nullptr)
+                {
+                    g_frameCallBack(pj.timestamp, (float*)&pj.pose);
+				}
 
                 pSample->SetBlob(MF_USER_DATA_PAYLOAD, (UINT8*)&pj, sizeof(pj));
 
@@ -513,7 +509,6 @@ int PV_Stream(SOCKET clientsocket, HANDLE clientevent, MediaFrameReader const& r
     do
     {
         ok = recv_u8(clientsocket, mode);
-        UnityShowMessage("Receive mode: %d", mode);
         if (!ok) {
 			// if it's timeout, continue
             if (WSAGetLastError() == WSAETIMEDOUT)
