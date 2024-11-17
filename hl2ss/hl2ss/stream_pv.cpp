@@ -500,7 +500,7 @@ int PV_Stream(SOCKET clientsocket, HANDLE clientevent, MediaFrameReader const& r
     g_divisor = format.divisor;    
     memset(&g_pvp_sh, 0, sizeof(g_pvp_sh));
 
-    runUdpListener(stream_port, onDelayDataReceived);
+    //runUdpListener(stream_port, onDelayDataReceived);
 
     ReleaseSRWLockExclusive(&g_lock);
     reader.StartAsync().get();
