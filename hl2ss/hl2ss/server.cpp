@@ -2,6 +2,7 @@
 #include <ws2tcpip.h>
 #include "server.h"
 #include "types.h"
+#include "log.h"
 
 //-----------------------------------------------------------------------------
 // Functions
@@ -88,6 +89,43 @@ bool recv_u32(SOCKET socket, uint32_t& dword)
 	status = recv(socket, (char*)&buf.w.w1.b.b1.b, 1, 0);
 	if (status != 1) { return false; }
 	dword = buf.d;
+	return true;
+}
+
+// the reconnection version of recv_u32
+bool recv_u32_reconnect(SOCKET socket, uint32_t& dword, bool reconnect)
+{
+	v32 buf;
+
+	int status;
+	status = recv_reconnect(socket, (char*)&buf.w.w0.b.b0.b, 1, 0, reconnect);
+	if (status != 1) { return false; }
+	status = recv_reconnect(socket, (char*)&buf.w.w0.b.b1.b, 1, 0, reconnect);
+	if (status != 1) { return false; }
+	status = recv_reconnect(socket, (char*)&buf.w.w1.b.b0.b, 1, 0, reconnect);
+	if (status != 1) { return false; }
+	status = recv_reconnect(socket, (char*)&buf.w.w1.b.b1.b, 1, 0, reconnect);
+	if (status != 1) { return false; }
+	dword = buf.d;
+	return true;
+}
+
+// a recv function that handles the case where the socket timed out possibly because of internet issues
+// if the recv timed out, it will try to re-receive the data
+bool recv_reconnect(SOCKET s, char* buf, int len, int flags, bool reconnect)
+{
+	int status, error;
+	while (true) {
+		status = recv(s, buf, len, flags);
+		if (status == SOCKET_ERROR) {
+			error = WSAGetLastError();
+			if (error == WSAETIMEDOUT && reconnect) {
+				continue;
+			}
+			return false;
+		}
+		break;
+	}
 	return true;
 }
 

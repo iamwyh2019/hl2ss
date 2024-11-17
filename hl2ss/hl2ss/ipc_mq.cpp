@@ -50,6 +50,8 @@ char g_udp_buffer[65535];
 HANDLE g_udp_thread = NULL;
 HANDLE g_udp_event_quit = NULL;
 
+const int SOCKET_TIMEOUT = 3000;
+
 static DWORD WINAPI MQ_UDP_EntryPoint_Receive(void* param)
 {
 	g_udp_event_quit = CreateEvent(NULL, TRUE, FALSE, NULL);
@@ -79,8 +81,7 @@ static DWORD WINAPI MQ_UDP_EntryPoint_Receive(void* param)
 		return error;
 	}
 
-	int timeout = 5000; // 5 seconds
-	if (setsockopt(udpSocket, SOL_SOCKET, SO_RCVTIMEO, (const char*)&timeout, sizeof(timeout)) == SOCKET_ERROR)
+	if (setsockopt(udpSocket, SOL_SOCKET, SO_RCVTIMEO, (const char*)&SOCKET_TIMEOUT, sizeof(SOCKET_TIMEOUT)) == SOCKET_ERROR)
 	{
 		// error
 		closesocket(udpSocket);
@@ -123,6 +124,13 @@ static DWORD WINAPI MQ_UDP_EntryPoint_Receive(void* param)
 		msg.command = *(uint32_t*)g_udp_buffer;
 		msg.size = *(uint32_t*)(g_udp_buffer + sizeof(uint32_t));
 
+		// assertion: bytesRead == sizeof(uint32_t) + sizeof(uint32_t) + msg.size
+		if (bytesRead != sizeof(uint32_t) + sizeof(uint32_t) + msg.size)
+		{
+			UnityShowMessage("MQ_UDP Error receiving: invalid message size (expect %d, got %d)", sizeof(uint32_t) + sizeof(uint32_t) + msg.size, bytesRead);
+			continue;
+		}
+
 		if (msg.size > 0)
 		{
 			msg.data = malloc(msg.size);
@@ -158,10 +166,20 @@ static DWORD WINAPI MQ_EntryPoint_Receive(void *param)
 
 	do
 	{
-		ok = recv_u32(clientsocket, msg.command);
-		if (!ok) { break; }
+		ok = recv_u32_reconnect(clientsocket, msg.command, false); // in case of timeout, it will stop the thread to wait for the next client
+		if (!ok) {
+			int error = WSAGetLastError();
+			UnityShowMessage("MQ: Error receiving command (%d)", error);
+			break;
+		}
+
 		ok = recv_u32(clientsocket, msg.size);
-		if (!ok) { break; }
+		if (!ok) {
+			int error = WSAGetLastError();
+			UnityShowMessage("MQ: Error receiving size (%d)", error);
+			break;
+		}
+
 		if (msg.size > 0)
 		{
 			msg.data = malloc(msg.size);
@@ -169,6 +187,8 @@ static DWORD WINAPI MQ_EntryPoint_Receive(void *param)
 			if (!ok)
 			{
 				free(msg.data);
+				int error = WSAGetLastError();
+				UnityShowMessage("MQ: Error receiving data (%d)", error);
 				break;
 			}
 		}
@@ -184,8 +204,17 @@ static DWORD WINAPI MQ_EntryPoint_Receive(void *param)
 		}
 		else if (msg.command == MQ_COMMAND_GLOBAL_QUIT)
 		{
-			// global quit
-			SetEvent(g_event_quit);
+			// break, plus end UDP thread
+			// stop the UDP thread
+			UnityShowMessage("MQ: Global quit command received");
+			if (g_udp_event_quit != NULL && g_udp_thread != NULL) {
+				SetEvent(g_udp_event_quit);
+				WaitForSingleObject(g_udp_thread, INFINITE);
+				CloseHandle(g_udp_thread);
+				CloseHandle(g_udp_event_quit);
+				g_udp_thread = NULL;
+				g_udp_event_quit = NULL;
+			}
 			break;
 		}
 
@@ -296,14 +325,21 @@ static void MQ_Procedure(SOCKET clientsocket)
 	uint16_t stream_port;
 	bool ok;
 
+	// first, set the timeout for the socket
+	if (setsockopt(clientsocket, SOL_SOCKET, SO_RCVTIMEO, (const char*)&SOCKET_TIMEOUT, sizeof(SOCKET_TIMEOUT)) == SOCKET_ERROR)
+	{
+		UnityShowMessage("MQ: Error setting socket timeout (%d)", WSAGetLastError());
+	}
+
 	if (g_udp_thread == NULL) {
 		ok = recv_u16(clientsocket, stream_port);
 		if (!ok) {
 			UnityShowMessage("MQ: Error receiving stream port (%d)", WSAGetLastError());
 		}
-		else {
-			g_udp_thread = CreateThread(NULL, 0, MQ_UDP_EntryPoint_Receive, &stream_port, 0, NULL);
-		}
+		g_udp_thread = CreateThread(NULL, 0, MQ_UDP_EntryPoint_Receive, &stream_port, 0, NULL);
+	}
+	else {
+		UnityShowMessage("MQ: UDP thread already started");
 	}
 	
 	threads[0] = CreateThread(NULL, 0, MQ_EntryPoint_Receive, &clientsocket, 0, NULL);
@@ -375,6 +411,8 @@ static DWORD WINAPI MQ_EntryPoint(void* param)
 		WaitForSingleObject(g_udp_thread, INFINITE);
 		CloseHandle(g_udp_thread);
 		CloseHandle(g_udp_event_quit);
+		g_udp_thread = NULL;
+		g_udp_event_quit = NULL;
 	}
 
 	closesocket(listensocket);
